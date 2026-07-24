@@ -29,6 +29,18 @@ class ExcelBridge2 {
                     , "StartTime(s)", "EndTime(s)", "SourceVisibility"
                     , "SourceDescription", "Prominence", "AnnotationText"]
 
+    /*  Only these must be present for a sheet to count as annotations.
+
+        The workbooks vary: some carry all ten columns, others omit
+        SourceDescription entirely. Demanding the full set made the tool reject
+        perfectly good sheets. Anything outside this list is optional - when a
+        sheet lacks it, the field simply reports itself as absent and its button
+        stays disabled.
+
+        "Caption Number" is also the block anchor, so it cannot be optional.  */
+    static Required := ["Caption Number", "Track", "StartTime(s)", "EndTime(s)"
+                      , "AnnotationText"]
+
     /*  Property name used on a row record, per header.  */
     static Fields := Map(
         "Caption Number"    , "captionNo",
@@ -203,11 +215,17 @@ class ExcelBridge2 {
             index++
         }
 
-        for want in ExcelBridge2.Schema
+        for want in ExcelBridge2.Required
             if !columns.Has(want)
                 return 0
 
         return columns
+    }
+
+    /*  Does the bound sheet actually carry this column?
+        Distinguishes "the cell is empty" from "there is no such column".  */
+    HasColumn(header) {
+        return this.columns.Has(header)
     }
 
     ; ----------------------------------------------------------------- rows --
@@ -233,6 +251,11 @@ class ExcelBridge2 {
         loop rowCount - 1 {
             r := A_Index + 1
             record := { excelRow: r + headerRow - 1 }
+
+            ; Every field must exist even when its column does not, or reading
+            ; an absent one later throws instead of simply coming back empty.
+            for header in ExcelBridge2.Schema
+                record.%ExcelBridge2.Fields[header]% := ""
 
             for header, column in this.columns {
                 field := ExcelBridge2.Fields[header]

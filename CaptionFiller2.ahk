@@ -258,9 +258,12 @@ ShowCaption() {
 
     for entry in FIELDS {
         value := values[entry.field]
-        ui["value_" entry.field].Value := value
+        ; A column the sheet does not have at all reads differently from a
+        ; column whose cell happens to be blank.
+        present := bridge.HasColumn(entry.label)
+        ui["value_" entry.field].Value := present ? value : "(not in this sheet)"
         if entry.fill
-            ui["btn_" entry.field].Enabled := (value != "")
+            ui["btn_" entry.field].Enabled := (present && value != "")
     }
 
     ui["prevCaption"].Enabled := (index > 1)
