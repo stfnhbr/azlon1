@@ -76,7 +76,7 @@ class ExcelBridge {
             if (candidate.name = name) {
                 this.book := candidate.book
                 this.app := candidate.app
-                this.sheet := candidate.book.ActiveSheet
+                this.sheet := this.PickSheet(candidate.book)
                 return
             }
         }
@@ -87,8 +87,63 @@ class ExcelBridge {
         not hand us: binding by file path works across instances.  */
     BindFile(path) {
         this.book := ComObjGet(path)
-        this.sheet := this.book.ActiveSheet
         this.app := this.book.Application
+        this.sheet := this.PickSheet(this.book)
+    }
+
+    /*  Chooses which sheet to read.
+
+        The sheet on screen wins whenever it carries the columns, so nothing
+        changes when you are already looking at the annotations. Otherwise the
+        workbook is scanned - that is what stops a workbook whose annotations
+        sit on a second tab from being reported as missing its columns.
+
+        When nothing matches, the active sheet is handed back anyway so that
+        Load() raises its usual error, which names the headers it did find.  */
+    PickSheet(book) {
+        active := 0
+        try active := book.ActiveSheet
+        if (active && this.SheetHasColumns(active))
+            return active
+
+        try {
+            for sheet in book.Worksheets
+                if this.SheetHasColumns(sheet)
+                    return sheet
+        }
+        return active
+    }
+
+    /*  True when a sheet's header row carries every required column.  */
+    SheetHasColumns(sheet) {
+        used := 0
+        try used := sheet.UsedRange
+        if !used
+            return false
+
+        values := 0
+        try values := sheet.Range(sheet.Cells(used.Row, used.Column)
+                                , sheet.Cells(used.Row, used.Column + used.Columns.Count - 1)).Value2
+        if !IsObject(values)
+            return false
+
+        count := 0
+        try count := values.MaxIndex(2)
+        if !count
+            return false
+
+        seen := Map()
+        loop count {
+            text := ""
+            try text := Trim(String(values[1, A_Index]))
+            if (text != "")
+                seen[text] := true
+        }
+
+        for want in ExcelBridge.Required
+            if !seen.Has(want)
+                return false
+        return true
     }
 
     /*  Reads the header row and every data row beneath it, in one COM call.  */
