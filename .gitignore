@@ -1,0 +1,23 @@
+# Generated tool state - remembers window position and your place in the sheet.
+# Machine-specific, not worth versioning.
+CaptionFiller.ini
+CaptionFiller2.ini
+*.ini
+
+# Excel lock files, created while a workbook is open.
+~$*
+
+# Annotation workbooks and exports.
+#
+# Ignored ON PURPOSE: these hold client annotation data. Keeping them out of
+# git means a future "push this to GitHub" can never leak a caption sheet by
+# accident. If you ever genuinely want to version one, force it:
+#     git add -f "some file.xlsx"
+*.xlsx
+*.xlsb
+*.xls
+
+# Scratch and backup copies.
+_TESTCOPY*
+*.bak
+*.bak-*
