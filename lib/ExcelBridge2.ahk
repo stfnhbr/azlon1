@@ -377,6 +377,25 @@ FormatSeconds(value) {
     return Format("{:.3f}", value + 0)
 }
 
+/*  Splits seconds into whole minutes / seconds / milliseconds, because the
+    website takes a time in three boxes while this schema stores it in one.
+    Rounds to milliseconds FIRST, so 59.9996 becomes 1 min 0 s 0 ms rather than
+    an impossible 60 in the seconds box.
+
+    Text that is not a number splits to nothing at all - the seconds box still
+    shows it verbatim, so a malformed cell stays visible instead of being
+    quietly turned into 0 min 0 s 0 ms.  */
+SplitTime2(seconds) {
+    if (seconds = "" || !IsNumber(seconds))
+        return { min: "", sec: "", ms: "" }
+    totalMs := Round(seconds * 1000)
+    if (totalMs < 0)
+        totalMs := 0
+    return { min: totalMs // 60000
+           , sec: Mod(totalMs // 1000, 60)
+           , ms : Mod(totalMs, 1000) }
+}
+
 /*  Caption and track numbers arrive from Excel as doubles: 4 comes back as 4.0
     and would be typed as "4.0". Whole numbers collapse to integers.  */
 NormalizeCount(value) {

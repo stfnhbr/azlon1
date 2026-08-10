@@ -1,0 +1,130 @@
+Sub HYX()
+'
+' HYX Macro
+'
+    Dim ws As Worksheet
+    Dim found As Range
+    Dim lastRow As Long, lastCol As Long
+    Dim numbers() As Variant
+    Dim i As Long
+
+    Set ws = ActiveSheet
+
+    ' Last row of real data, measured across the whole sheet rather than off one
+    ' column - the optional columns (Track Description, Prominence, ...) are
+    ' empty until the annotator fills them in, so any single column can come up
+    ' short. Search backwards from A1 to land on the final used row.
+    Set found = ws.Cells.Find(What:="*", After:=ws.Range("A1"), _
+                              LookIn:=xlFormulas, LookAt:=xlPart, _
+                              SearchOrder:=xlByRows, SearchDirection:=xlPrevious)
+    If found Is Nothing Then Exit Sub          ' empty sheet, nothing to number
+    lastRow = found.Row
+
+    Application.ScreenUpdating = False
+
+    ' --- sheet-wide formatting ---------------------------------------------
+    With ws.Cells
+        .HorizontalAlignment = xlGeneral
+        .VerticalAlignment = xlTop
+        .WrapText = False
+        .Orientation = 0
+        .AddIndent = False
+        .IndentLevel = 0
+        .ShrinkToFit = False
+        .ReadingOrder = xlContext
+        .MergeCells = False
+    End With
+    With ws.Cells.Font
+        .Name = "Consolas"
+        .Size = 8
+        .Strikethrough = False
+        .Superscript = False
+        .Subscript = False
+        .OutlineFont = False
+        .Shadow = False
+        .Underline = xlUnderlineStyleNone
+        .TintAndShade = 0
+        .ThemeFont = xlThemeFontNone
+    End With
+
+    ' Start/End times, three decimals. Done before the insert below, while they
+    ' are still columns D and E.
+    ws.Columns("D:E").NumberFormat = "0.000"
+
+    ' Centre column A first so the column inserted in its place inherits it.
+    With ws.Columns("A:A")
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlTop
+        .WrapText = False
+        .Orientation = 0
+        .AddIndent = False
+        .IndentLevel = 0
+        .ShrinkToFit = False
+        .ReadingOrder = xlContext
+        .MergeCells = False
+    End With
+
+    ' --- caption numbering --------------------------------------------------
+    ws.Columns("A:A").Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+    ws.Range("A1").Value = "Caption Number"
+
+    ' Written as one array instead of AutoFill: no seed cells to size the fill
+    ' from, so it cannot inherit a stale destination range, and it stays correct
+    ' for a sheet with a single data row.
+    If lastRow >= 2 Then
+        ReDim numbers(1 To lastRow - 1, 1 To 1)
+        For i = 1 To lastRow - 1
+            numbers(i, 1) = i
+        Next i
+        ws.Range("A2").Resize(lastRow - 1, 1).Value = numbers
+    End If
+
+    With ws.Columns("A:A")
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlTop
+        .WrapText = False
+        .Orientation = 0
+        .AddIndent = False
+        .IndentLevel = 0
+        .ShrinkToFit = False
+        .ReadingOrder = xlContext
+        .MergeCells = False
+    End With
+
+    ' Header, styled to match the other column headers.
+    With ws.Range("A1")
+        .Font.Bold = True
+        .Interior.Color = vbYellow
+    End With
+
+    ' Values only - the header keeps the alignment the other headers use.
+    If lastRow >= 2 Then
+        With ws.Range("A2:A" & lastRow)
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlTop
+        End With
+    End If
+
+    ' Track Number - column B once the insert above has shifted everything right.
+    With ws.Columns("B:B")
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlTop
+    End With
+
+    ws.Columns("A:A").EntireColumn.AutoFit
+
+    ' --- autofilter, last ---------------------------------------------------
+    ' The export already filters its own columns, and the insert above pushed
+    ' that range one column right - drop it and reapply across everything so
+    ' Caption Number gets a dropdown too.
+    Set found = ws.Cells.Find(What:="*", After:=ws.Range("A1"), _
+                              LookIn:=xlFormulas, LookAt:=xlPart, _
+                              SearchOrder:=xlByColumns, SearchDirection:=xlPrevious)
+    lastCol = found.Column
+
+    If ws.AutoFilterMode Then ws.AutoFilterMode = False
+    ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol)).AutoFilter
+
+    ws.Range("A1").Select
+    Application.ScreenUpdating = True
+End Sub

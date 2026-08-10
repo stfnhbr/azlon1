@@ -9,9 +9,13 @@
         EndTime(s), SourceVisibility, SourceDescription, Prominence,
         AnnotationText
 
-    All ten are shown. Six can be typed into the website with one click:
-    Track, TrackDescription, StartTime(s), EndTime(s), SourceDescription and
-    AnnotationText. The other four are read-only context.
+    All ten are shown. Six carry fill buttons: Track, TrackDescription,
+    StartTime(s), EndTime(s), SourceDescription and AnnotationText. The other
+    four are read-only context.
+
+    The sheet keeps a time in one cell of decimal seconds, the website takes it
+    in three boxes, so each time row offers Min / Sec / Ms buttons beside the
+    whole-seconds one - twelve buttons in all.
 
     How you use it:
         1. click the target box on the website  (the browser keeps focus)
@@ -43,26 +47,70 @@ class Sym {
     static ELL  := Chr(0x2026)     ; ellipsis
 }
 
-/*  Every column, in sheet order. "fill" marks the ones with a button.
-    field must match ExcelBridge2.Fields.  */
+/*  Every column, in sheet order. field must match ExcelBridge2.Fields.
+    kind decides the row:
+        "read"  shown only, no button
+        "fill"  one button typing the cell as it stands
+        "time"  a button for the whole seconds plus one per time part
+    prefix builds the part keys ("start" + "Min"), short names them on screen.  */
 FIELDS := [
-    { field: "captionNo" , label: "Caption Number"    , fill: false },
-    { field: "trackNo"   , label: "TrackNumber"       , fill: false },
-    { field: "track"     , label: "Track"             , fill: true  },
-    { field: "trackDesc" , label: "TrackDescription"  , fill: true  },
-    { field: "startTime" , label: "StartTime(s)"      , fill: true  },
-    { field: "endTime"   , label: "EndTime(s)"        , fill: true  },
-    { field: "sourceVis" , label: "SourceVisibility"  , fill: false },
-    { field: "sourceDesc", label: "SourceDescription" , fill: true  },
-    { field: "prominence", label: "Prominence"        , fill: false },
-    { field: "annotation", label: "AnnotationText"    , fill: true  } ]
+    { field: "captionNo" , label: "Caption Number"    , kind: "read" },
+    { field: "trackNo"   , label: "TrackNumber"       , kind: "read" },
+    { field: "track"     , label: "Track"             , kind: "fill" },
+    { field: "trackDesc" , label: "TrackDescription"  , kind: "fill" },
+    { field: "startTime" , label: "StartTime(s)"      , kind: "time"
+                         , prefix: "start", short: "Start" },
+    { field: "endTime"   , label: "EndTime(s)"        , kind: "time"
+                         , prefix: "end"  , short: "End"   },
+    { field: "sourceVis" , label: "SourceVisibility"  , kind: "read" },
+    { field: "sourceDesc", label: "SourceDescription" , kind: "fill" },
+    { field: "prominence", label: "Prominence"        , kind: "read" },
+    { field: "annotation", label: "AnnotationText"    , kind: "fill" } ]
+
+/*  The three boxes a time is typed into, in website order.  */
+TIME_PARTS := [
+    { suffix: "Min", label: "Min" },
+    { suffix: "Sec", label: "Sec" },
+    { suffix: "Ms" , label: "Ms"  } ]
+
+/*  One entry per button, in click order, derived from the tables above so the
+    two cannot drift apart. key indexes values and sent, field names the column
+    the value comes from, and hint marks the buttons the Sym.NEXT pointer walks.
+
+    caption is what fits on the button, label is what the status line says: the
+    three time buttons read "Min" in a row already introduced by StartTime(s),
+    but "Sent Min: 4" downstairs would not say which time it came from.  */
+BUTTONS := FillButtons()
+
+FillButtons() {
+    global FIELDS, TIME_PARTS
+    list := []
+    for entry in FIELDS {
+        if (entry.kind = "fill")
+            list.Push({ key: entry.field, field: entry.field
+                      , caption: entry.label, label: entry.label, hint: true })
+        else if (entry.kind = "time") {
+            /*  The whole-seconds button stays - a form with a single seconds
+                box still exists - but it is left out of the hint chain, so on
+                the three-box form the pointer runs Min, Sec, Ms and nothing
+                gets typed into the wrong shape by following it.  */
+            list.Push({ key: entry.field, field: entry.field
+                      , caption: entry.label, label: entry.label, hint: false })
+            for part in TIME_PARTS
+                list.Push({ key: entry.prefix part.suffix, field: entry.field
+                          , caption: part.label
+                          , label: entry.short " " part.label, hint: true })
+        }
+    }
+    return list
+}
 
 ; ------------------------------------------------------------------- state --
 
 bridge   := ExcelBridge2()
 index    := 1                ; 1-based position in bridge.rows
-values   := Map()            ; field -> string currently shown
-sent     := Map()            ; field -> true once dispensed
+values   := Map()            ; field or button key -> string currently shown
+sent     := Map()            ; button key -> true once dispensed
 paused   := false
 guiHwnd  := 0
 lastHwnd := 0                ; last foreground window that was not the guide
@@ -198,13 +246,28 @@ BuildGui() {
     win.Add("Text", "xm y+8 w578 h1 0x10")
 
     ; --- the ten columns, in sheet order ---
+    ; Every row spans the same 578px as the separators above and below.
     for entry in FIELDS {
         key := entry.field
-        if entry.fill {
+        if (entry.kind = "fill") {
             btn := win.Add("Button", "xm y+5 w170 h26", "   " entry.label)
             btn.OnEvent("Click", Fill.Bind(key))
             ui["btn_" key] := btn
             ui["value_" key] := win.Add("Edit", "x+8 yp+2 w400 h22 ReadOnly -E0x200")
+        } else if (entry.kind = "time") {
+            ; The whole seconds, then the same time as Min / Sec / Ms.
+            btn := win.Add("Button", "xm y+5 w120 h26", "   " entry.label)
+            btn.OnEvent("Click", Fill.Bind(key))
+            ui["btn_" key] := btn
+            ui["value_" key] := win.Add("Edit", "x+8 yp+2 w66 h22 ReadOnly Center -E0x200")
+            for part in TIME_PARTS {
+                partKey := entry.prefix part.suffix
+                ; yp-2 climbs back out of the value box onto the button line.
+                btn := win.Add("Button", "x+10 yp-2 w62 h26", "   " part.label)
+                btn.OnEvent("Click", Fill.Bind(partKey))
+                ui["btn_" partKey] := btn
+                ui["value_" partKey] := win.Add("Edit", "x+4 yp+2 w52 h22 ReadOnly Center -E0x200")
+            }
         } else {
             ; Read-only context: shown, but nothing to click.
             win.Add("Text", "xm y+5 w170 h22 +0x200", "      " entry.label)
@@ -218,7 +281,9 @@ BuildGui() {
     ui["status"] := win.Add("Text", "xm y+6 w578 h18", "Ready.")
 
     ui["replace"] := win.Add("Checkbox", "xm y+6 Checked", "Replace field contents")
+    ui["padMs"]   := win.Add("Checkbox", "x+14 yp", "Pad ms to 3")
     ui["follow"]  := win.Add("Checkbox", "x+14 yp Checked", "Follow in Excel")
+    ui["padMs"].OnEvent("Click", (*) => RepadMs())
 
     btn := win.Add("Button", "xm y+8 w96 h26", "Reload")
     btn.OnEvent("Click", (*) => ReloadSheet())
@@ -226,6 +291,7 @@ BuildGui() {
     ui["pause"].OnEvent("Click", (*) => TogglePause())
 
     ui["replace"].Value := Integer(IniRead(INI, "options", "replace", "1"))
+    ui["padMs"].Value   := Integer(IniRead(INI, "options", "padMs", "0"))
     ui["follow"].Value  := Integer(IniRead(INI, "options", "follow", "1"))
 
     x := IniRead(INI, "window", "x", "")
@@ -244,8 +310,14 @@ ShowCaption() {
     record := bridge.Refresh(index)
 
     values := Map()
-    for entry in FIELDS
+    for entry in FIELDS {
         values[entry.field] := record.%entry.field%
+        if (entry.kind = "time") {
+            parts := TimeParts(record.%entry.field%, ui["padMs"].Value)
+            for part in TIME_PARTS
+                values[entry.prefix part.suffix] := parts[part.suffix]
+        }
+    }
 
     sent := Map()
 
@@ -262,8 +334,18 @@ ShowCaption() {
         ; column whose cell happens to be blank.
         present := bridge.HasColumn(entry.label)
         ui["value_" entry.field].Value := present ? value : "(not in this sheet)"
-        if entry.fill
-            ui["btn_" entry.field].Enabled := (present && value != "")
+        if (entry.kind = "read")
+            continue
+        ui["btn_" entry.field].Enabled := (present && value != "")
+        if (entry.kind != "time")
+            continue
+        for part in TIME_PARTS {
+            partKey := entry.prefix part.suffix
+            ; Blank when the seconds cell holds something that is not a time:
+            ; the seconds box beside it still shows what is actually there.
+            ui["value_" partKey].Value := present ? values[partKey] : ""
+            ui["btn_" partKey].Enabled := (present && values[partKey] != "")
+        }
     }
 
     ui["prevCaption"].Enabled := (index > 1)
@@ -278,23 +360,50 @@ ShowCaption() {
     IniWrite(index, INI, "state", "index")
 }
 
-/*  Leading glyph per fill button: sent, next up, or neither.  */
+/*  The three boxes a time is typed into, keyed by the part suffix.
+    pad writes the milliseconds three digits wide: 48 becomes 048.  */
+TimeParts(seconds, pad) {
+    parts := SplitTime2(seconds)
+    return Map(
+        "Min", (parts.min = "") ? "" : String(parts.min),
+        "Sec", (parts.sec = "") ? "" : String(parts.sec),
+        "Ms" , (parts.ms  = "") ? "" : (pad ? Format("{:03}", parts.ms) : String(parts.ms)))
+}
+
+/*  Re-renders only the millisecond boxes when the pad is toggled. A full
+    ShowCaption would do it too, but it would also clear the check marks of
+    everything already typed into this caption.  */
+RepadMs() {
+    global ui, values
+
+    pad := ui["padMs"].Value
+    for entry in FIELDS {
+        if (entry.kind != "time")
+            continue
+        key := entry.prefix "Ms"
+        if (!values.Has(key) || values[key] = "")
+            continue
+        ms := Integer(values[key])
+        values[key] := pad ? Format("{:03}", ms) : String(ms)
+        ui["value_" key].Value := values[key]
+    }
+}
+
+/*  Leading glyph per button: sent, next up, or neither.  */
 MarkNext() {
     global ui, sent, values
 
     nextKey := ""
-    for entry in FIELDS {
-        if (entry.fill && values[entry.field] != "" && !sent.Has(entry.field)) {
-            nextKey := entry.field
+    for button in BUTTONS {
+        if (button.hint && values[button.key] != "" && !sent.Has(button.key)) {
+            nextKey := button.key
             break
         }
     }
-    for entry in FIELDS {
-        if !entry.fill
-            continue
-        mark := sent.Has(entry.field) ? Sym.SENT " "
-              : (entry.field = nextKey ? Sym.NEXT " " : "   ")
-        ui["btn_" entry.field].Text := mark entry.label
+    for button in BUTTONS {
+        mark := sent.Has(button.key) ? Sym.SENT " "
+              : (button.key = nextKey ? Sym.NEXT " " : "   ")
+        ui["btn_" button.key].Text := mark button.caption
     }
 }
 
@@ -457,9 +566,9 @@ Status(text) {
 }
 
 LabelOf(key) {
-    for entry in FIELDS
-        if (entry.field = key)
-            return entry.label
+    for button in BUTTONS
+        if (button.key = key)
+            return button.label
     return key
 }
 
@@ -475,6 +584,7 @@ Shutdown() {
         IniWrite(x, INI, "window", "x")
         IniWrite(y, INI, "window", "y")
         IniWrite(ui["replace"].Value, INI, "options", "replace")
+        IniWrite(ui["padMs"].Value, INI, "options", "padMs")
         IniWrite(ui["follow"].Value, INI, "options", "follow")
         IniWrite(index, INI, "state", "index")
     }
