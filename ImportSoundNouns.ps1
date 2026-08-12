@@ -7,12 +7,14 @@
     hands out files like "Hut R0_sound_nouns.txt" where every caption carries the
     category it belongs to:
 
-        0.000<TAB>30.000<TAB>8 - Insect chirping
-        0.200<TAB>0.933<TAB>1 - Male speech
+        0.000<TAB>30.000<TAB>8 - Insect chirping<TAB>Insect Chirping
+        0.200<TAB>0.933<TAB>1 - Male speech<TAB>Male Speech
 
     Audacity's own File > Import > Labels flattens all of that into one track.
-    This builds a track per number instead - named "1", "2", "3", ... - with the
-    "N - " prefix stripped from each caption, since the track already says it.
+    This builds a track per number instead - named "1 Male speech", "2 Breathing"
+    and so on from the optional fourth field, or just "1", "2", "3" when the file
+    does not carry one - with the "N - " prefix stripped from each caption, since
+    the track already says it.
 
     Audacity has no scriptable "import labels from this path" (ImportLabels only
     opens a dialog, and Import2 rejects label files), so the tracks are built
@@ -50,120 +52,11 @@ $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-
-try {
-    # Windows only lets the process that already owns the foreground window give
-    # focus away. This one is a hidden powershell.exe started by the hotkey, so
-    # SetForegroundWindow on its own is ignored and the dialog opens behind
-    # Audacity. Attaching to the foreground window's input queue first makes the
-    # two threads share a focus state, and the call is then honoured.
-    if (-not ('AutoNyx.Foreground' -as [type])) {
-        Add-Type -Namespace AutoNyx -Name Foreground -MemberDefinition @'
-[DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
-[DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
-[DllImport("user32.dll")] private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-[DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
-[DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr hWnd);
-[DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-[DllImport("user32.dll")] private static extern IntPtr GetLastActivePopup(IntPtr hWnd);
-[DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
-[DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
-
-public static void Force(IntPtr hWnd) {
-    if (hWnd == IntPtr.Zero) { return; }
-    IntPtr fore = GetForegroundWindow();
-    uint us = GetCurrentThreadId();
-    uint them = (fore == IntPtr.Zero) ? 0 : GetWindowThreadProcessId(fore, IntPtr.Zero);
-    bool attached = false;
-    if (them != 0 && them != us) { attached = AttachThreadInput(us, them, true); }
-    try {
-        ShowWindow(hWnd, 5);   // SW_SHOW
-        BringWindowToTop(hWnd);
-        SetForegroundWindow(hWnd);
-    }
-    finally {
-        if (attached) { AttachThreadInput(us, them, false); }
-    }
-}
-
-// The dialog itself, addressed through the stub form that owns it. A modal
-// dialog is its owner's one ENABLEDPOPUP - ask for that rather than
-// GetLastActivePopup, which reports the owner back while the dialog has never
-// been active, which is precisely the situation here. No popup yet means no
-// dialog yet, and raising the owner then is both harmless and what we want.
-public static void ForcePopup(IntPtr owner) {
-    if (owner == IntPtr.Zero) { return; }
-    IntPtr popup = GetWindow(owner, 6);   // GW_ENABLEDPOPUP
-    if (popup == IntPtr.Zero) { popup = GetLastActivePopup(owner); }
-    Force(popup == IntPtr.Zero ? owner : popup);
-}
-'@
-    }
-}
-catch {
-    # No C# compiler, no focus fix: the dialogs open behind Audacity the way they
-    # used to. That beats the import dying up here, above the try block that puts
-    # failures on screen - launched hidden, it would vanish without a word.
-}
+# Show-Problem, Invoke-WithOwner and the focus fix behind them, shared with
+# MakeSoundNouns.ps1. $DialogTitle below is what they put in the title bar.
+. (Join-Path $PSScriptRoot 'lib\Dialogs.ps1')
 
 $DialogTitle = 'Import sound nouns'
-
-function Show-Problem {
-    param([string]$Message)
-    Invoke-WithOwner {
-        param($owner)
-        [System.Windows.Forms.MessageBox]::Show($owner, $Message, $DialogTitle,
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
-    }
-}
-
-function Invoke-WithOwner {
-    <#
-        PowerShell is launched hidden by the hotkey, so a dialog has no natural
-        owner and would open behind Audacity. A topmost stub form gives it one,
-        and AutoNyx.Foreground makes the activation actually stick - Show() and
-        Activate() alone are refused, since this process is not the one holding
-        the foreground.
-    #>
-    param([Parameter(Mandatory)][scriptblock]$Action)
-
-    $owner = New-Object System.Windows.Forms.Form
-    $owner.TopMost = $true
-    $owner.ShowInTaskbar = $false
-    $owner.StartPosition = 'Manual'
-    $owner.Location = New-Object System.Drawing.Point(-2000, -2000)
-    $owner.Size = New-Object System.Drawing.Size(1, 1)
-    $owner.Show(); $owner.Activate()
-
-    $timer = $null
-    if ('AutoNyx.Foreground' -as [type]) {
-        [AutoNyx.Foreground]::Force($owner.Handle)
-
-        # Raising the owner is the part that matters - once this process holds the
-        # foreground, anything it opens afterwards may take focus freely. The timer
-        # then catches the dialog itself. ShowDialog blocks, so a timer is the only
-        # way to reach it once it is up; the modal loop pumps this thread's
-        # messages, so it keeps ticking. A handful of ticks, then stop: past that
-        # the user is the one deciding what has focus.
-        $handle = $owner.Handle
-        $ticks = 0
-        $timer = New-Object System.Windows.Forms.Timer
-        $timer.Interval = 120
-        $timer.Add_Tick({
-            $ticks++
-            [AutoNyx.Foreground]::ForcePopup($handle)
-            if ($ticks -ge 5) { $timer.Stop() }
-        }.GetNewClosure())
-        $timer.Start()
-    }
-
-    try { & $Action $owner }
-    finally {
-        if ($timer) { $timer.Stop(); $timer.Dispose() }
-        $owner.Close(); $owner.Dispose()
-    }
-}
 
 function ConvertTo-AudacityArg {
     <#
@@ -290,7 +183,11 @@ try {
         else {
             $names = ($existing | ForEach-Object { $_.name }) -join ', '
             $message = "This project already has $($existing.Count) label track(s):`n`n$names`n`n" +
-                       "Replace them with $($groups.Count) track(s) from $fileName?`n`n" +
+                       # Braces round the name: '?' is a legal character in a
+                       # PowerShell variable name, so "$fileName?" reads as a
+                       # variable called 'fileName?' and the prompt loses both
+                       # the filename and its question mark.
+                       "Replace them with $($groups.Count) track(s) from ${fileName}?`n`n" +
                        "Yes  - delete them and import`n" +
                        "No   - leave this project alone"
             $answer = Invoke-WithOwner {
@@ -342,14 +239,36 @@ try {
     $trackIndex = $tracks.Count
 
     $commands = New-Object System.Collections.Generic.List[string]
+    # What each group is about to become. Built here rather than recomputed
+    # during verification, so the name sent to Audacity and the name reported
+    # afterwards cannot drift apart.
+    $plan     = New-Object System.Collections.Generic.List[object]
+    $ordinal  = 0
+
     foreach ($group in $groups) {
+        # "2 Breathing" where the file named the category, plain "2" where it
+        # did not. The name comes from a workbook column, so it can hold spaces,
+        # a trailing period, or a quote - it goes through the same escaping as
+        # the caption text.
+        $ordinal++
+        $trackName = if ($group.Name) { "$($group.Number) $($group.Name)" } else { [string]$group.Number }
+        # Label tracks are numbered 1..n among themselves and each new one lands
+        # at the bottom, so this run owns the numbers just above the count we
+        # started with, in group order. Their category numbers do not come into
+        # it - a gap in the numbering shifts nothing.
+        $plan.Add([pscustomobject]@{
+            Group       = $group
+            Name        = $trackName
+            TrackNumber = $baseLabelTracks + $ordinal
+        })
+
         $commands.Add('NewLabelTrack:')
         # Select AND focus it. AddLabel follows the *focused* track, not the
         # selected one - selecting alone leaves focus whereever it was and the
         # labels land in somebody else's track.
         $commands.Add("SelectTracks: Track=$trackIndex TrackCount=1 Mode=Set")
         $commands.Add('SetTrack: Focused=1')
-        $commands.Add("SetTrack: Name=`"$($group.Number)`"")
+        $commands.Add("SetTrack: Name=`"$(ConvertTo-AudacityArg $trackName)`"")
 
         foreach ($label in $group.Labels) {
             $start = Format-AudacityTime $label.Start
@@ -398,22 +317,27 @@ try {
     $after = @($allAfter | Where-Object { $_.TrackNumber -gt $baseLabelTracks })
     $problems = New-Object System.Collections.Generic.List[string]
 
-    foreach ($group in $groups) {
-        $name = [string]$group.Number
-        $got = @($after | Where-Object { $_.Track -eq $name } | Sort-Object Start, End)
+    # Matched on TrackNumber, not on the name: two categories are allowed to
+    # carry the same name, and matching on that would then compare a track
+    # against both of them. The name still goes into every message, since that
+    # is what the track is called on screen.
+    foreach ($entry in $plan) {
+        $group = $entry.Group
+        $where = "track $($entry.TrackNumber) '$($entry.Name)'"
+        $got = @($after | Where-Object { $_.TrackNumber -eq $entry.TrackNumber } | Sort-Object Start, End)
         if ($got.Count -ne $group.Labels.Count) {
-            $problems.Add("  track $name : expected $($group.Labels.Count) labels, found $($got.Count)")
+            $problems.Add("  ${where}: expected $($group.Labels.Count) labels, found $($got.Count)")
             continue
         }
         for ($i = 0; $i -lt $got.Count; $i++) {
             $want = $group.Labels[$i]
             if ($got[$i].Text -ne $want.Text) {
-                $problems.Add("  track $name label $($i + 1): expected '$($want.Text)', found '$($got[$i].Text)'")
+                $problems.Add("  $where label $($i + 1): expected '$($want.Text)', found '$($got[$i].Text)'")
             }
             elseif ([math]::Abs($got[$i].Start - $want.Start) -gt 0.001 -or
                     [math]::Abs($got[$i].End   - $want.End)   -gt 0.001) {
-                $problems.Add(("  track {0} label {1}: expected {2:0.000}-{3:0.000}, found {4:0.000}-{5:0.000}" -f `
-                    $name, ($i + 1), $want.Start, $want.End, $got[$i].Start, $got[$i].End))
+                $problems.Add(("  {0} label {1}: expected {2:0.000}-{3:0.000}, found {4:0.000}-{5:0.000}" -f `
+                    $where, ($i + 1), $want.Start, $want.End, $got[$i].Start, $got[$i].End))
             }
         }
     }
