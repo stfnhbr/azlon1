@@ -34,8 +34,11 @@
     Write the caption file and stop, leaving Audacity alone.
 
 .PARAMETER Replace
-    Passed through to the import: answer its "replace existing label tracks?"
-    prompt with yes, unattended.
+    Passed through to the import: answer its existing-label-tracks prompt with
+    "replace", unattended.
+
+.PARAMETER KeepExisting
+    Passed through to the import: answer it with "add alongside", unattended.
 
 .PARAMETER DryRun
     Print the prompt and the path that would be written, and call nothing.
@@ -48,6 +51,7 @@ param(
     [string]$OutPath,
     [switch]$NoImport,
     [switch]$Replace,
+    [switch]$KeepExisting,
     [switch]$DryRun
 )
 
@@ -396,7 +400,8 @@ try {
     if ($script:progress) { $script:progress.Close(); $script:progress = $null }
 
     $importArgs = @{ Path = $OutPath }
-    if ($Replace) { $importArgs['Replace'] = $true }
+    if ($Replace)      { $importArgs['Replace'] = $true }
+    if ($KeepExisting) { $importArgs['KeepExisting'] = $true }
     & (Join-Path $PSScriptRoot 'ImportSoundNouns.ps1') @importArgs
     exit $LASTEXITCODE
 }

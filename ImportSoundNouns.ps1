@@ -24,10 +24,12 @@
     Skip the file picker and read this .txt.
 
 .PARAMETER Replace
-    Answer the "replace existing label tracks?" prompt with yes, unattended.
+    Answer the existing-label-tracks prompt with "replace", unattended: the
+    label tracks already there are deleted first.
 
 .PARAMETER KeepExisting
-    Answer it with no: leave existing label tracks alone and add alongside.
+    Answer it with "add alongside", unattended: the label tracks already there
+    are left as they are and the new ones land beneath them.
 
 .PARAMETER AnyProject
     Skip the check that the caption file belongs to the project Audacity has
@@ -187,17 +189,24 @@ try {
                        # PowerShell variable name, so "$fileName?" reads as a
                        # variable called 'fileName?' and the prompt loses both
                        # the filename and its question mark.
-                       "Replace them with $($groups.Count) track(s) from ${fileName}?`n`n" +
-                       "Yes  - delete them and import`n" +
-                       "No   - leave this project alone"
+                       "What should the $($groups.Count) track(s) from ${fileName} do?`n`n" +
+                       "Yes     - replace them: the existing label tracks are deleted first`n" +
+                       "No      - add alongside: keep the existing label tracks as well`n" +
+                       "Cancel  - leave this project alone"
+            # Adding alongside is the default: Enter should not be able to delete
+            # somebody's annotation work, and Escape still cancels outright.
             $answer = Invoke-WithOwner {
                 param($owner)
                 [System.Windows.Forms.MessageBox]::Show($owner, $message, $DialogTitle,
-                    [System.Windows.Forms.MessageBoxButtons]::YesNo,
-                    [System.Windows.Forms.MessageBoxIcon]::Question)
+                    [System.Windows.Forms.MessageBoxButtons]::YesNoCancel,
+                    [System.Windows.Forms.MessageBoxIcon]::Question,
+                    [System.Windows.Forms.MessageBoxDefaultButton]::Button2)
             }
-            if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { exit 0 }
-            $wipe = $true
+            switch ($answer) {
+                ([System.Windows.Forms.DialogResult]::Yes) { $wipe = $true }
+                ([System.Windows.Forms.DialogResult]::No)  { $wipe = $false }
+                default                                    { exit 0 }
+            }
         }
 
         if ($wipe) {

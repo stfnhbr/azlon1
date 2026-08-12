@@ -116,8 +116,23 @@ fire a file at the wrong one:
   stops and imports nothing rather than writing into the project that happens to
   be in front.
 
-If the project already has label tracks, it asks once whether to replace them
-all or leave the project alone. Replacing is a single undo step.
+If the project already has label tracks, it asks once what the incoming ones
+should do:
+
+| Answer | What happens |
+|---|---|
+| **Yes** | Replace: the label tracks already there are deleted first |
+| **No** | Add alongside: they stay, and the new tracks land beneath them |
+| **Cancel** | Nothing at all |
+
+**No** is the default, so Enter cannot delete annotation work by accident, and
+Escape still cancels outright. Either import is a single undo step.
+
+Adding alongside is the way to build a project up from more than one caption
+file, or to compare two passes over the same audio side by side. The category
+numbering restarts per import, so a second import of seven categories gives a
+second `1 Male Speech`, `2 Breathing`, … underneath the first — the tracks are
+distinct, they simply share names.
 
 Afterwards it reads every label back and compares against the file, so a
 miscount or a caption on the wrong track is reported rather than left to be
@@ -165,7 +180,7 @@ A workbook holding several annotation sheets — `Completion` and `Refinement`
 alongside a `Summary` that isn't one — asks which to use; exactly one match binds
 silently.
 
-Existing label tracks still get the replace prompt from
+Existing label tracks still get the replace / add-alongside / cancel prompt from
 [section 3](#3-numbered-captions-in-one-label-track-per-category) — that guard is
 the one thing standing between generated captions and real annotation work, so it
 stays.
@@ -179,7 +194,8 @@ MakeSoundNouns.ps1 -Path "POW R0.xlsx"     # skip the picker
                    -Sheet Refinement       # skip the sheet question
                    -Model claude-sonnet-5  # default is claude-opus-5
                    -NoImport               # write the .txt and stop
-                   -Replace                # answer the replace prompt, unattended
+                   -Replace                # existing label tracks: replace them
+                   -KeepExisting           # existing label tracks: add alongside
                    -DryRun                 # print the prompt, call nothing
 ```
 
