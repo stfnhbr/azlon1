@@ -3,8 +3,12 @@
     Reads annotation rows out of a workbook that is already open in Excel.
 
     Columns are located by HEADER TEXT, never by position: the layout is owned
-    by $AnnotationColumns in lib\AnnotationWorkbook.ps1, and renaming or
+    by $AnnotationLayouts in lib\AnnotationWorkbook.ps1, and renaming or
     reordering a column there must not break this tool.
+
+    The headers below are the "Legacy" layout in that table. The exports write
+    the "Soup EE" layout now, so a fresh export is for CaptionFiller2/3 - set
+    $AnnotationLayout back to 'Legacy' to produce sheets this tool can read.
 */
 
 class ExcelBridge {

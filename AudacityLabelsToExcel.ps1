@@ -6,8 +6,9 @@
     Audacity exports labels as tab-separated lines:  start <TAB> end <TAB> label
     Optional frequency-range lines (starting with "\") are ignored.
 
-    Each input file produces a sibling .xlsx with three columns:
-        A: Annotation | B: Start | C: End
+    Each input file produces a sibling .xlsx with the same ten columns as the
+    hotkey route - see $AnnotationLayouts in lib\AnnotationWorkbook.ps1. A .txt
+    knows nothing about label tracks, so TrackNumber and Track stay empty here.
 
     For a live project, ExportAnnotations.ps1 is better - it reads Audacity
     directly and keeps the label track name too. Use this one for .txt files you

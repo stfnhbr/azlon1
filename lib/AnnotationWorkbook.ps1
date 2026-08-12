@@ -98,37 +98,72 @@ function Get-FreePath {
 #   Source = the property read off each row, or $null for a column nobody fills yet
 #   Format = Excel number format ('@' = text, so a leading "=" is not a formula)
 #   Width  = fixed column width, or $null to size to contents
-$script:AnnotationColumns = @(
-    @{ Header = 'Caption Number'     ; Source = 'CaptionNumber' ; Format = '0'     ; Width = $null },
-    @{ Header = 'Track Number'       ; Source = 'TrackNumber'   ; Format = '0'     ; Width = $null },
-    @{ Header = 'Track Name'         ; Source = 'Track'         ; Format = '@'     ; Width = $null },
-    @{ Header = 'Track Description'  ; Source = $null           ; Format = '@'     ; Width = 28 },
-    @{ Header = 'Caption'            ; Source = 'Text'          ; Format = '@'     ; Width = 60 },
-    @{ Header = 'Start Time'         ; Source = 'Start'         ; Format = '0.000' ; Width = $null },
-    @{ Header = 'End Time'           ; Source = 'End'           ; Format = '0.000' ; Width = $null },
-    @{ Header = 'Source Visibility'  ; Source = $null           ; Format = '@'     ; Width = 18 },
-    @{ Header = 'Source Description' ; Source = $null           ; Format = '@'     ; Width = 28 },
-    @{ Header = 'Prominence'         ; Source = $null           ; Format = '@'     ; Width = 14 }
-)
+#
+# Two layouts are kept side by side. They differ only in header names and column
+# order - the same ten pieces of information are written either way - and each
+# one matches a different filler, so an export can be opened in the filler
+# without renaming anything:
+#
+#   SoupEE  headers and order of the "Soup EE" schema, read by CaptionFiller2
+#           and CaptionFiller3 via lib\ExcelBridge2.ahk. Current default.
+#   Legacy  the original layout, read by CaptionFiller.ahk via
+#           lib\ExcelBridge.ahk. Kept so going back is one line, below.
+$script:AnnotationLayouts = @{
+
+    SoupEE = @(
+        @{ Header = 'Caption Number'    ; Source = 'CaptionNumber' ; Format = '0'     ; Width = $null },
+        @{ Header = 'TrackNumber'       ; Source = 'TrackNumber'   ; Format = '0'     ; Width = $null },
+        @{ Header = 'Track'             ; Source = 'Track'         ; Format = '@'     ; Width = $null },
+        @{ Header = 'TrackDescription'  ; Source = $null           ; Format = '@'     ; Width = 28 },
+        @{ Header = 'StartTime(s)'      ; Source = 'Start'         ; Format = '0.000' ; Width = $null },
+        @{ Header = 'EndTime(s)'        ; Source = 'End'           ; Format = '0.000' ; Width = $null },
+        @{ Header = 'SourceVisibility'  ; Source = $null           ; Format = '@'     ; Width = 18 },
+        @{ Header = 'SourceDescription' ; Source = $null           ; Format = '@'     ; Width = 28 },
+        @{ Header = 'Prominence'        ; Source = $null           ; Format = '@'     ; Width = 14 },
+        @{ Header = 'AnnotationText'    ; Source = 'Text'          ; Format = '@'     ; Width = 60 }
+    )
+
+    Legacy = @(
+        @{ Header = 'Caption Number'     ; Source = 'CaptionNumber' ; Format = '0'     ; Width = $null },
+        @{ Header = 'Track Number'       ; Source = 'TrackNumber'   ; Format = '0'     ; Width = $null },
+        @{ Header = 'Track Name'         ; Source = 'Track'         ; Format = '@'     ; Width = $null },
+        @{ Header = 'Track Description'  ; Source = $null           ; Format = '@'     ; Width = 28 },
+        @{ Header = 'Caption'            ; Source = 'Text'          ; Format = '@'     ; Width = 60 },
+        @{ Header = 'Start Time'         ; Source = 'Start'         ; Format = '0.000' ; Width = $null },
+        @{ Header = 'End Time'           ; Source = 'End'           ; Format = '0.000' ; Width = $null },
+        @{ Header = 'Source Visibility'  ; Source = $null           ; Format = '@'     ; Width = 18 },
+        @{ Header = 'Source Description' ; Source = $null           ; Format = '@'     ; Width = 28 },
+        @{ Header = 'Prominence'         ; Source = $null           ; Format = '@'     ; Width = 14 }
+    )
+}
+
+# The layout both routes write. Change this single word to 'Legacy' to get the
+# old headers back.
+$script:AnnotationLayout = 'SoupEE'
 
 function Write-AnnotationWorkbook {
     <#
     .SYNOPSIS
         Writes annotation rows to an .xlsx via Excel COM. Returns the path written.
     .DESCRIPTION
-        Layout comes from $AnnotationColumns above - edit that list to add,
+        Layout comes from $AnnotationLayouts above - edit that table to add,
         rename or reorder columns. A row property that is absent (e.g. Track on
         the .txt route, which has no track information) leaves its cell empty.
         Caption Number is generated here, numbering the rows as written.
+    .PARAMETER Layout
+        Which column layout to write. Defaults to $AnnotationLayout, so both
+        routes stay in step unless a caller deliberately asks otherwise.
     #>
     param(
         [Parameter(Mandatory)] $Excel,
         [Parameter(Mandatory)] $Rows,
         [Parameter(Mandatory)] [string]$Path,
-        [string]$SheetName = 'Annotations'
+        [string]$SheetName = 'Annotations',
+        [ValidateSet('SoupEE', 'Legacy')] [string]$Layout = $script:AnnotationLayout
     )
 
-    $cols = $script:AnnotationColumns.Count
+    $columns = $script:AnnotationLayouts[$Layout]
+    $cols = $columns.Count
 
     # Copy into a plain array by hand: "@($Rows)" throws "Argument types do not
     # match" on a Generic.List[object] under Windows PowerShell 5.1.
@@ -145,12 +180,12 @@ function Write-AnnotationWorkbook {
 
     # Build a 2-D array and write it in one shot; cell-by-cell COM is glacial.
     $data = New-Object 'object[,]' ($count + 1), $cols
-    for ($c = 0; $c -lt $cols; $c++) { $data[0, $c] = $script:AnnotationColumns[$c].Header }
+    for ($c = 0; $c -lt $cols; $c++) { $data[0, $c] = $columns[$c].Header }
 
     for ($i = 0; $i -lt $count; $i++) {
         $r = $items[$i]
         for ($c = 0; $c -lt $cols; $c++) {
-            $source = $script:AnnotationColumns[$c].Source
+            $source = $columns[$c].Source
             $value = switch ($source) {
                 $null           { $null }                       # nobody fills this one yet
                 'CaptionNumber' { $i + 1 }                      # generated, not read off the row
@@ -163,7 +198,7 @@ function Write-AnnotationWorkbook {
 
     $all = $sheet.Range('A1').Resize($count + 1, $cols)
     for ($c = 0; $c -lt $cols; $c++) {
-        $sheet.Range('A1').Offset(0, $c).Resize($count + 1, 1).NumberFormat = $script:AnnotationColumns[$c].Format
+        $sheet.Range('A1').Offset(0, $c).Resize($count + 1, 1).NumberFormat = $columns[$c].Format
     }
     $all.Value2 = $data
 
@@ -189,14 +224,14 @@ function Write-AnnotationWorkbook {
     for ($c = 0; $c -lt $cols; $c++) {
         $column = $sheet.Columns.Item($c + 1)
         $column.WrapText = $false
-        $width = $script:AnnotationColumns[$c].Width
+        $width = $columns[$c].Width
         if ($width) {
             $column.ColumnWidth = $width
         } else {
             # Empty columns would shrink to nothing, so never go below the
             # header's own width.
             $column.AutoFit() | Out-Null
-            $minimum = $script:AnnotationColumns[$c].Header.Length + 4
+            $minimum = $columns[$c].Header.Length + 4
             if ($column.ColumnWidth -lt $minimum) { $column.ColumnWidth = $minimum }
         }
     }

@@ -4,21 +4,33 @@
 
 .DESCRIPTION
     Bound to a hotkey by "Audacity annotation hotkey.ahk". Reads labels straight
-    from Audacity over mod-script-pipe - no Export Labels step, and unlike the
-    .txt export the source label track survives as a fourth column.
+    from Audacity over mod-script-pipe - no Export Labels step, and unlike
+    Audacity's own .txt export the source label track survives as a column of
+    its own.
+    (Keep help lines from starting with ".txt": PowerShell reads a leading dot
+    as a help keyword and silently drops the whole comment-based help block.)
 
-    Columns: Annotation | Start | End | Track, sorted by start time.
+    Ten columns in the "Soup EE" order - Caption Number, TrackNumber, Track,
+    TrackDescription, StartTime(s), EndTime(s), SourceVisibility,
+    SourceDescription, Prominence, AnnotationText - sorted by start time. The
+    layout, including how to switch back to the old headers, lives in
+    lib\AnnotationWorkbook.ps1.
 
 .PARAMETER OutPath
     Skip the save dialog and write here.
 
 .PARAMETER NoOpen
     Write the workbook without opening it in Excel afterwards.
+
+.PARAMETER Layout
+    Column layout for this one export: SoupEE or Legacy. Omit to follow the
+    default set in lib\AnnotationWorkbook.ps1.
 #>
 [CmdletBinding()]
 param(
     [string]$OutPath,
-    [switch]$NoOpen
+    [switch]$NoOpen,
+    [ValidateSet('SoupEE', 'Legacy')] [string]$Layout
 )
 
 $ErrorActionPreference = 'Stop'
@@ -80,8 +92,12 @@ try {
     $keepRunning = $false
     try {
         $excel = New-ExcelApp
+        # Omitted rather than defaulted, so the layout chosen in
+        # lib\AnnotationWorkbook.ps1 stays the single source of truth.
+        $layoutArg = @{}
+        if ($Layout) { $layoutArg['Layout'] = $Layout }
         $written = Write-AnnotationWorkbook -Excel $excel -Rows $rows -Path $OutPath `
-                                            -SheetName $context.Name
+                                            -SheetName $context.Name @layoutArg
         if (-not $NoOpen) {
             Show-Workbooks -Excel $excel -Paths @($written)
             $keepRunning = $true
