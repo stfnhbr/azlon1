@@ -65,6 +65,8 @@ class Sym {
     static NEXT := Chr(0x25B6)     ; right triangle
     static SENT := Chr(0x2713)     ; check mark
     static ELL  := Chr(0x2026)     ; ellipsis
+    static OPEN := Chr(0x25BC)     ; down triangle - a block standing open
+    static SHUT := Chr(0x25B6)     ; right triangle - a block folded away
 }
 
 /*  Row widths. The first column is 170 throughout - tags and fill buttons all
@@ -101,6 +103,7 @@ class Width {
     static BOX_H :=  18       ; every value box
     static BTN_H :=  26       ; rows led by a button
     static LBL_H :=  22       ; rows led by a label
+    static HEAD_H := 20       ; a foldable block's header strip
 }
 
 /*  Vertical space before a row: a little inside a block, more between two.
@@ -197,6 +200,20 @@ FIELDS := [
     { field: "endTime"   , label: "EndTime(s)"        , kind: "time", block: "D"
                          , prefix: "end"  , short: "End"   } ]
 
+/*  Blocks that can be folded away, and what their header calls them.
+
+    A block listed here gains a clickable strip above its rows; clicking it
+    hides the rows and leaves the strip. Only the Track pair folds today - the
+    other three carry the caption itself, which there is no point hiding - but
+    the mechanism reads the block letter off FIELDS like everything else, so
+    adding a letter here is all another one would take.
+
+    Folding is a layout change, so the window is rebuilt rather than reshuffled:
+    the band behind each block is measured from the rows standing on it, and
+    letting BuildGui measure again is both shorter and safer than moving
+    everything by hand and hoping the arithmetic agrees.  */
+FOLDABLE := Map("B", "Track")
+
 /*  The two boxes a time is typed into, in website order. No Min: see the note
     at the top, and TimeParts below, which adds the minutes back into Sec.  */
 TIME_PARTS := [
@@ -217,7 +234,7 @@ FillButtons() {
     list := []
     for entry in FIELDS {
         if (entry.kind = "fill")
-            list.Push({ key: entry.field, field: entry.field
+            list.Push({ key: entry.field, field: entry.field, block: entry.block
                       , caption: entry.label, label: entry.label, hint: true })
         else if (entry.kind = "time") {
             /*  No button for the decimal seconds. The website takes a time in
@@ -226,7 +243,7 @@ FillButtons() {
                 left as a tag over the parts that are actually sent.  */
             for part in TIME_PARTS
                 list.Push({ key: entry.prefix part.suffix, field: entry.field
-                          , caption: part.label
+                          , block: entry.block, caption: part.label
                           , label: entry.short " " part.label, hint: true })
         }
     }
@@ -245,6 +262,38 @@ lastHwnd := 0                ; last foreground window that was not the guide
 lastCtrl := 0                ; and the control focused inside it
 ui       := Map()
 bound    := { workbook: "", sheet: "" }
+folded   := LoadFolds()      ; block letter -> true when its rows are hidden
+
+LoadFolds() {
+    global FOLDABLE, INI
+    state := Map()
+    for letter, caption in FOLDABLE
+        state[letter] := Integer(IniRead(INI, "folded", letter, "0")) ? true : false
+    return state
+}
+
+/*  A folded block's rows are not merely invisible - they were never added, so
+    there is no control to reach for. Every loop that walks FIELDS or BUTTONS to
+    touch a control has to step over them, which is what this answers.
+
+    The values behind them are still read and still current: folding hides the
+    fields, it does not stop the sheet being read, so unfolding shows the
+    caption you are on rather than a stale one.  */
+Hidden(block) {
+    global folded
+    return folded.Has(block) && folded[block]
+}
+
+/*  How many rows a block would show if it were open - what the header says is
+    hidden while it is shut.  */
+BlockSize(letter) {
+    global FIELDS
+    count := 0
+    for entry in FIELDS
+        if (entry.block = letter)
+            count++
+    return count
+}
 
 ; ------------------------------------------------------------------ startup --
 
@@ -345,7 +394,9 @@ PickSource() {
 
 ; --------------------------------------------------------------------- view --
 
-BuildGui() {
+/*  atX and atY hold the window where it already stands, for the rebuild a fold
+    causes. Left out, it comes up where the .ini last saw it.  */
+BuildGui(atX := "", atY := "") {
     global ui, guiHwnd, bound
 
     win := Gui("AlwaysOnTop -MinimizeBox -MaximizeBox +E0x08000000 -DPIScale"
@@ -393,7 +444,37 @@ BuildGui() {
         key := entry.field
         shade := Tint.BLOCK[entry.block]
         gap := (lastBlock = "" || entry.block = lastBlock) ? Lead.INSIDE : Lead.BLOCK
+        opening := (entry.block != lastBlock)
         lastBlock := entry.block
+
+        /*  A foldable block opens with its own header, whether it is folded or
+            not: it is the only thing left to click on once the rows are gone.
+
+            +0x100 is SS_NOTIFY, without which a Text sends no click at all -
+            the strip would draw correctly and do nothing. The band is seeded
+            from the header here so that a folded block still has one, narrowed
+            to the strip; an open block widens it again from its rows below.  */
+        if (opening && FOLDABLE.Has(entry.block)) {
+            shut := folded.Has(entry.block) && folded[entry.block]
+            caption := (shut ? Sym.SHUT : Sym.OPEN) "  " FOLDABLE[entry.block]
+            if shut
+                caption .= "      (" BlockSize(entry.block) " fields hidden)"
+            head := win.Add("Text", "xm y+" gap " w" Width.ROW " h" Width.HEAD_H
+                                  . " +0x200 +0x100 +Background" shade, caption)
+            head.OnEvent("Click", ToggleFold.Bind(entry.block))
+            ui["fold_" entry.block] := head
+
+            head.GetPos(&headX, &headY, &headW, &headH)
+            bounds[entry.block] := { top: headY, bottom: headY + headH }
+
+            ; The rows belong to the header, not to the block above it.
+            gap := Lead.INSIDE
+            if shut
+                continue
+        }
+        else if (folded.Has(entry.block) && folded[entry.block]) {
+            continue
+        }
 
         if (entry.kind = "fill") {
             first := win.Add("Button", "xm y+" gap " w" Width.LABEL " h26", "   " entry.label)
@@ -503,8 +584,8 @@ BuildGui() {
         ui["band_" letter] := strip
     }
 
-    x := IniRead(INI, "window", "x", "")
-    y := IniRead(INI, "window", "y", "")
+    x := (atX != "") ? atX : IniRead(INI, "window", "x", "")
+    y := (atY != "") ? atY : IniRead(INI, "window", "y", "")
     win.OnEvent("Close", (*) => Shutdown())
     if (x != "" && y != "")
         win.Show("NoActivate x" x " y" y)
@@ -538,6 +619,9 @@ ShowCaption() {
         , index, bridge.rows.Length, record.captionNo, record.excelRow)
 
     for entry in FIELDS {
+        ; Folded away: values still read above, but there is nothing to show.
+        if Hidden(entry.block)
+            continue
         value := values[entry.field]
         ; A column the sheet does not have at all reads differently from a
         ; column whose cell happens to be blank.
@@ -692,7 +776,7 @@ RepadMs() {
 
     pad := ui["padMs"].Value
     for entry in FIELDS {
-        if (entry.kind != "time")
+        if (entry.kind != "time" || Hidden(entry.block))
             continue
         key := entry.prefix "Ms"
         if (!values.Has(key) || values[key] = "")
@@ -707,14 +791,21 @@ RepadMs() {
 MarkNext() {
     global ui, sent, values
 
+    /*  A folded block's buttons are not on the window at all, so the pointer
+        steps over them too: it has to land on something the user can see and
+        click, not on a field that is currently put away.  */
     nextKey := ""
     for button in BUTTONS {
+        if (Hidden(button.block))
+            continue
         if (button.hint && values[button.key] != "" && !sent.Has(button.key)) {
             nextKey := button.key
             break
         }
     }
     for button in BUTTONS {
+        if (Hidden(button.block))
+            continue
         mark := sent.Has(button.key) ? Sym.SENT " "
               : (button.key = nextKey ? Sym.NEXT " " : "   ")
         ui["btn_" button.key].Text := mark button.caption
@@ -865,6 +956,37 @@ ReloadSheet() {
     } catch as e {
         MsgBox(e.Message, APP_TITLE, "Iconx")
     }
+}
+
+ToggleFold(letter, *) {
+    global folded, INI
+    folded[letter] := !(folded.Has(letter) && folded[letter])
+    IniWrite(folded[letter] ? 1 : 0, INI, "folded", letter)
+    RebuildGui()
+}
+
+/*  Draws the window again with the folds as they now stand.
+
+    Nothing worth keeping lives in the controls: the values come from the sheet
+    on every ShowCaption, the tick marks from the sent map, and the checkboxes
+    are written out here and read back by BuildGui. So the window can be thrown
+    away and remade, which keeps one description of the layout instead of two.
+
+    The two globals that do have to survive are the foreground window and the
+    control focused inside it - lastHwnd and lastCtrl, which say where a value
+    would be typed. They are untouched here on purpose: a fold must not cost the
+    user the field they had clicked on the website.  */
+RebuildGui() {
+    global ui, index
+    ui["gui"].GetPos(&x, &y)
+    IniWrite(ui["replace"].Value, INI, "options", "replace")
+    IniWrite(ui["padMs"].Value, INI, "options", "padMs")
+    IniWrite(ui["follow"].Value, INI, "options", "follow")
+
+    ui["gui"].Destroy()
+    ui := Map()
+    BuildGui(x, y)
+    ShowCaption()
 }
 
 TogglePause() {
