@@ -6,8 +6,8 @@ Option Explicit
 '        column that numbers the existing caption rows, and only those.
 '
 '  What it does, in order:
-'    1. sets every worksheet in the workbook to Consolas 8 pt, top-aligned,
-'       and unmerges the export sheet
+'    1. sets the sheet to Consolas 8 pt, top-aligned, and unmerges it - the
+'       active sheet only, never the rest of the workbook
 '    2. inserts column A, "Caption Number", unless the sheet already has one
 '    3. numbers every row that carries data; blank rows stay blank, and
 '       nothing below the last used row is touched
@@ -38,13 +38,11 @@ Private Const RAW_TIME_LAST  As Long = 5   ' End time
 
 
 Public Sub HYX()
-    Dim wb As Workbook
     Dim ws As Worksheet
     Dim lastRow As Long, lastCol As Long
 
     If TypeName(ActiveSheet) <> "Worksheet" Then Exit Sub
     Set ws = ActiveSheet
-    Set wb = ws.Parent
 
     ' Measured across the whole sheet rather than off one column: the
     ' optional columns (Track Description, Prominence, ...) are empty until
@@ -61,7 +59,7 @@ Public Sub HYX()
     On Error GoTo Cleanup
     Application.ScreenUpdating = False
 
-    NormaliseWorkbook wb
+    ApplyBodyFormat ws
     UnmergeSheet ws
     EnsureCaptionColumn ws
 
@@ -86,16 +84,11 @@ End Sub
 
 ' --- steps -----------------------------------------------------------------
 
-' Consolas 8 pt, top-aligned, on every worksheet in the workbook - not just
-' the export sheet. Protected sheets are left alone rather than erroring.
-Private Sub NormaliseWorkbook(wb As Workbook)
-    Dim ws As Worksheet
-
-    For Each ws In wb.Worksheets
-        If Not ws.ProtectContents Then ApplyBodyFormat ws
-    Next ws
-End Sub
-
+' Consolas 8 pt, top-aligned, on the export sheet only. HYX never touches
+' another sheet: resetting horizontal alignment workbook-wide would undo the
+' centring a previous run put on another sheet's columns A and B, and those
+' hold numbers, so General alignment shows them right-aligned.
+'
 ' Horizontal alignment is reset to General rather than forced left, so text
 ' still sits left and numbers still sit right.
 Private Sub ApplyBodyFormat(ws As Worksheet)
@@ -117,9 +110,6 @@ Private Sub ApplyBodyFormat(ws As Worksheet)
     End With
 End Sub
 
-' Only the export sheet: the normalisation pass above now runs workbook-wide,
-' and unmerging every sheet would wreck any that is laid out rather than
-' tabular.
 Private Sub UnmergeSheet(ws As Worksheet)
     ws.Cells.MergeCells = False
 End Sub

@@ -11,9 +11,9 @@ Excel VBA macro that tidies a caption export and prefixes it with a
 
 Run `HYX` on the sheet holding the export. What it does:
 
-1. sets **every worksheet in the workbook** to Consolas 8 pt, top-aligned
-   (horizontal alignment reset to General, so text sits left and numbers sit
-   right), and unmerges the export sheet;
+1. sets the sheet to Consolas 8 pt, top-aligned (horizontal alignment reset to
+   General, so text sits left and numbers sit right) and unmerges it — the
+   active sheet only, never the rest of the workbook;
 2. inserts column A, `Caption Number` — unless the sheet already has one, so a
    second run renumbers in place instead of inserting a duplicate column;
 3. numbers the caption rows that carry data, and only those: blank rows stay
@@ -26,8 +26,8 @@ Run `HYX` on the sheet holding the export. What it does:
    reapplies the AutoFilter across the whole table so the new column gets a
    dropdown too, and freezes the header row.
 
-Only the export sheet is unmerged, and protected sheets are left alone — the
-active sheet being protected stops the run with a message.
+`HYX` touches nothing outside the active sheet; a protected active sheet stops
+the run with a message. For workbook-wide formatting, use `CC`.
 
 The raw export's column positions live in the constants at the top of the
 module (`RAW_TRACK_COL`, `RAW_TIME_FIRST`, `RAW_TIME_LAST`); adjust those if
