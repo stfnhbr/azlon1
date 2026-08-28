@@ -6,7 +6,8 @@ Option Explicit
 '        column that numbers the existing caption rows, and only those.
 '
 '  What it does, in order:
-'    1. normalises sheet-wide formatting (font, alignment, no merged cells)
+'    1. sets every worksheet in the workbook to Consolas 8 pt, top-aligned,
+'       and unmerges the export sheet
 '    2. inserts column A, "Caption Number", unless the sheet already has one
 '    3. numbers every row that carries data; blank rows stay blank, and
 '       nothing below the last used row is touched
@@ -36,11 +37,13 @@ Private Const RAW_TIME_LAST  As Long = 5   ' End time
 
 
 Public Sub HYX()
+    Dim wb As Workbook
     Dim ws As Worksheet
     Dim lastRow As Long, lastCol As Long
 
     If TypeName(ActiveSheet) <> "Worksheet" Then Exit Sub
     Set ws = ActiveSheet
+    Set wb = ws.Parent
 
     ' Measured across the whole sheet rather than off one column: the
     ' optional columns (Track Description, Prominence, ...) are empty until
@@ -48,10 +51,17 @@ Public Sub HYX()
     lastRow = LastUsedRow(ws)
     If lastRow < HEADER_ROW Then Exit Sub       ' empty sheet, nothing to number
 
+    If ws.ProtectContents Then
+        MsgBox "'" & ws.Name & "' is protected - unprotect it and run HYX again.", _
+               vbExclamation
+        Exit Sub
+    End If
+
     On Error GoTo Cleanup
     Application.ScreenUpdating = False
 
-    NormaliseSheet ws
+    NormaliseWorkbook wb
+    UnmergeSheet ws
     EnsureCaptionColumn ws
 
     lastCol = LastUsedColumn(ws)
@@ -74,10 +84,20 @@ End Sub
 
 ' --- steps -----------------------------------------------------------------
 
-' Strips the export's own formatting back to a single readable baseline.
-Private Sub NormaliseSheet(ws As Worksheet)
+' Consolas 8 pt, top-aligned, on every worksheet in the workbook - not just
+' the export sheet. Protected sheets are left alone rather than erroring.
+Private Sub NormaliseWorkbook(wb As Workbook)
+    Dim ws As Worksheet
+
+    For Each ws In wb.Worksheets
+        If Not ws.ProtectContents Then ApplyBodyFormat ws
+    Next ws
+End Sub
+
+' Horizontal alignment is reset to General rather than forced left, so text
+' still sits left and numbers still sit right.
+Private Sub ApplyBodyFormat(ws As Worksheet)
     With ws.Cells
-        .MergeCells = False
         .HorizontalAlignment = xlGeneral
         .VerticalAlignment = xlTop
         .WrapText = False
@@ -93,6 +113,13 @@ Private Sub NormaliseSheet(ws As Worksheet)
             .Subscript = False
         End With
     End With
+End Sub
+
+' Only the export sheet: the normalisation pass above now runs workbook-wide,
+' and unmerging every sheet would wreck any that is laid out rather than
+' tabular.
+Private Sub UnmergeSheet(ws As Worksheet)
+    ws.Cells.MergeCells = False
 End Sub
 
 ' Inserts the Caption Number column, unless a previous run already did.
@@ -132,7 +159,7 @@ Private Sub WriteCaptionNumbers(ws As Worksheet, ByVal lastRow As Long, ByVal la
 End Sub
 
 Private Sub FormatColumns(ws As Worksheet)
-    ' Caption Number and Track Number, centred.
+    ' Column A (Caption Number) and column B (Track Number), centred.
     With ColumnSpan(ws, 1, SheetColumn(RAW_TRACK_COL))
         .HorizontalAlignment = xlCenter
         .VerticalAlignment = xlTop
