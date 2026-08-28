@@ -18,8 +18,9 @@ Run `HYX` on the sheet holding the export. What it does:
    blank, and nothing below the last used row is touched;
 4. centres Caption Number and Track Number, and formats Start/End time to
    three decimals;
-5. reapplies the AutoFilter across the whole table so the new column gets a
-   dropdown too.
+5. bolds and highlights the header row yellow across the used columns,
+   reapplies the AutoFilter across the whole table so the new column gets a
+   dropdown too, and freezes the header row.
 
 The raw export's column positions live in the constants at the top of the
 module (`RAW_TRACK_COL`, `RAW_TIME_FIRST`, `RAW_TIME_LAST`); adjust those if

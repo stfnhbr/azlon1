@@ -10,8 +10,9 @@ Option Explicit
 '    2. inserts column A, "Caption Number", unless the sheet already has one
 '    3. numbers every row that carries data; blank rows stay blank, and
 '       nothing below the last used row is touched
-'    4. formats the Track Number and Start/End time columns
-'    5. reapplies the AutoFilter across the full table
+'    4. centres Caption Number and Track Number, and formats Start/End time
+'    5. bolds and highlights the header row, reapplies the AutoFilter across
+'       the full table, and freezes the header row
 '
 '  Re-runnable: a second run renumbers in place instead of inserting a
 '  second column.
@@ -56,7 +57,9 @@ Public Sub HYX()
     lastCol = LastUsedColumn(ws)
     WriteCaptionNumbers ws, lastRow, lastCol
     FormatColumns ws
+    HighlightHeaderRow ws, lastCol
     ApplyAutoFilter ws, lastRow, lastCol
+    FreezeHeaderRow ws
 
     ws.Range("A1").Select
 
@@ -139,13 +142,17 @@ Private Sub FormatColumns(ws As Worksheet)
     ColumnSpan(ws, SheetColumn(RAW_TIME_FIRST), _
                    SheetColumn(RAW_TIME_LAST)).NumberFormat = TIME_FORMAT
 
-    ' Header, styled to match the other column headers.
-    With ws.Cells(HEADER_ROW, 1)
+    ws.Columns(1).AutoFit
+End Sub
+
+' The whole header row, not just the Caption Number cell - and only the used
+' columns, since filling out to XFD looks wrong the moment anyone scrolls
+' right.
+Private Sub HighlightHeaderRow(ws As Worksheet, ByVal lastCol As Long)
+    With ws.Range(ws.Cells(HEADER_ROW, 1), ws.Cells(HEADER_ROW, lastCol))
         .Font.Bold = True
         .Interior.Color = vbYellow
     End With
-
-    ws.Columns(1).AutoFit
 End Sub
 
 ' The export ships its own AutoFilter over its own columns, and the insert
@@ -154,6 +161,25 @@ End Sub
 Private Sub ApplyAutoFilter(ws As Worksheet, ByVal lastRow As Long, ByVal lastCol As Long)
     If ws.AutoFilterMode Then ws.AutoFilterMode = False
     ws.Range(ws.Cells(HEADER_ROW, 1), ws.Cells(lastRow, lastCol)).AutoFilter
+End Sub
+
+
+' Freezing is a window operation, so it acts on the active sheet - which ws
+' is, by construction. Scroll home first: FreezePanes splits relative to the
+' top-left visible cell, not to A1.
+Private Sub FreezeHeaderRow(ws As Worksheet)
+    ws.Activate
+    If ActiveWindow Is Nothing Then Exit Sub
+
+    With ActiveWindow
+        .FreezePanes = False
+        .SplitRow = 0
+        .SplitColumn = 0
+        .ScrollRow = 1
+        .ScrollColumn = 1
+        .SplitRow = HEADER_ROW
+        .FreezePanes = True
+    End With
 End Sub
 
 
