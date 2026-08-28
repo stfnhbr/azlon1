@@ -1,15 +1,15 @@
 # azlon1
 
+Excel VBA macros for tidying caption exports and workbooks.
+Import a module into the workbook's VBA project (*VBE → File → Import File…*)
+and run the macro of the same name.
+
 ## `src/HYX.bas`
 
 Excel VBA macro that tidies a caption export and prefixes it with a
 **Caption Number** column.
 
-Import `src/HYX.bas` into the workbook's VBA project
-(*VBE → File → Import File…*), then run `HYX` on the sheet holding the
-export.
-
-What it does:
+Run `HYX` on the sheet holding the export. What it does:
 
 1. normalises sheet-wide formatting (Consolas 8, top-aligned, no merged cells);
 2. inserts column A, `Caption Number` — unless the sheet already has one, so a
@@ -24,3 +24,21 @@ What it does:
 The raw export's column positions live in the constants at the top of the
 module (`RAW_TRACK_COL`, `RAW_TIME_FIRST`, `RAW_TIME_LAST`); adjust those if
 the export layout changes.
+
+## `src/CC.bas`
+
+Applies the house formatting to **every worksheet** in the active workbook.
+
+Run `CC` with the workbook open. Per sheet:
+
+1. Consolas 8 pt, top-left aligned, across the whole sheet;
+2. where the sheet has column headers — i.e. row 1 is not blank — the header
+   row is highlighted yellow across the used columns, an AutoFilter is applied
+   over it, and row 1 is frozen.
+
+Sheets without headers are still formatted, but get no highlight, filter or
+freeze. Sheets holding an Excel Table keep the table's own filter rather than
+gaining a second, conflicting one. Protected sheets are skipped and listed at
+the end of the run. Merged cells are left as they are, since `CC` runs over
+whole workbooks and unmerging would wreck any sheet that is laid out rather
+than tabular.
