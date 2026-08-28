@@ -11,7 +11,8 @@ Option Explicit
 '    2. inserts column A, "Caption Number", unless the sheet already has one
 '    3. numbers every row that carries data; blank rows stay blank, and
 '       nothing below the last used row is touched
-'    4. centres Caption Number and Track Number, and formats Start/End time
+'    4. centres Caption Number and Track Number, converts Start/End time from
+'       text to real numbers and formats them to three decimals
 '    5. bolds and highlights the header row, reapplies the AutoFilter across
 '       the full table, and freezes the header row
 '
@@ -66,6 +67,7 @@ Public Sub HYX()
 
     lastCol = LastUsedColumn(ws)
     WriteCaptionNumbers ws, lastRow, lastCol
+    ConvertTimesToNumbers ws, lastRow
     FormatColumns ws
     HighlightHeaderRow ws, lastCol
     ApplyAutoFilter ws, lastRow, lastCol
@@ -158,6 +160,41 @@ Private Sub WriteCaptionNumbers(ws As Worksheet, ByVal lastRow As Long, ByVal la
     ws.Cells(firstRow, 1).Resize(UBound(numbers, 1), 1).Value = numbers
 End Sub
 
+' A number format does nothing to a cell holding text, and the export writes
+' Start/End as text often enough that "0.000" silently had no effect. Coerce
+' anything that reads as a number first; genuine numbers are left as they are,
+' and columns carrying formulas are left alone entirely.
+Private Sub ConvertTimesToNumbers(ws As Worksheet, ByVal lastRow As Long)
+    Dim timeCells As Range
+    Dim block As Variant
+    Dim r As Long, c As Long
+    Dim parsedValue As Double
+    Dim parsed As Boolean, changed As Boolean
+
+    If lastRow < HEADER_ROW + 1 Then Exit Sub
+
+    Set timeCells = ws.Range(ws.Cells(HEADER_ROW + 1, SheetColumn(RAW_TIME_FIRST)), _
+                             ws.Cells(lastRow, SheetColumn(RAW_TIME_LAST)))
+    ' HasFormula is Null when the range mixes formulas and values.
+    If IsNull(timeCells.HasFormula) Then Exit Sub
+    If timeCells.HasFormula Then Exit Sub
+
+    block = ReadBlock(timeCells)
+    For r = 1 To UBound(block, 1)
+        For c = 1 To UBound(block, 2)
+            If VarType(block(r, c)) = vbString Then
+                parsedValue = AsNumber(block(r, c), parsed)
+                If parsed Then
+                    block(r, c) = parsedValue
+                    changed = True
+                End If
+            End If
+        Next c
+    Next r
+
+    If changed Then timeCells.Value = block
+End Sub
+
 Private Sub FormatColumns(ws As Worksheet)
     ' Column A (Caption Number) and column B (Track Number), centred.
     With ColumnSpan(ws, 1, SheetColumn(RAW_TRACK_COL))
@@ -242,6 +279,41 @@ Private Function FindLast(ws As Worksheet, ByVal order As XlSearchOrder) As Rang
     Set FindLast = ws.Cells.Find(What:="*", After:=ws.Range("A1"), _
                                  LookIn:=xlFormulas, LookAt:=xlPart, _
                                  SearchOrder:=order, SearchDirection:=xlPrevious)
+End Function
+
+' Text that reads as a number, with ok set when it did. The separator is
+' localised first, so an export written on a machine with different regional
+' settings still parses - "12,345" and "12.345" both come back as 12.345.
+Private Function AsNumber(ByVal cellValue As Variant, ByRef ok As Boolean) As Double
+    Dim raw As String
+
+    ok = False
+    raw = LocaliseDecimal(Trim$(CStr(cellValue)))
+    If Len(raw) = 0 Then Exit Function
+
+    If IsNumeric(raw) Then
+        AsNumber = CDbl(raw)
+        ok = True
+    End If
+End Function
+
+' Swaps whichever decimal separator the text carries for the local one. Only
+' applied when there is exactly one separator, so a thousands separator is
+' never mistaken for a decimal point.
+Private Function LocaliseDecimal(ByVal raw As String) As String
+    Dim separators As Long
+
+    separators = Len(raw) - Len(Replace(Replace(raw, ".", ""), ",", ""))
+    If separators <> 1 Then
+        LocaliseDecimal = raw
+    Else
+        LocaliseDecimal = Replace(Replace(raw, ".", DecimalSeparator), _
+                                  ",", DecimalSeparator)
+    End If
+End Function
+
+Private Function DecimalSeparator() As String
+    DecimalSeparator = Application.International(xlDecimalSeparator)
 End Function
 
 ' Range values as a 2-D array, including the single-cell case where

@@ -18,8 +18,10 @@ Run `HYX` on the sheet holding the export. What it does:
    second run renumbers in place instead of inserting a duplicate column;
 3. numbers the caption rows that carry data, and only those: blank rows stay
    blank, and nothing below the last used row is touched;
-4. centres column A (Caption Number) and column B (Track Number), and formats
-   Start/End time to three decimals;
+4. centres column A (Caption Number) and column B (Track Number), and converts
+   Start/End time to real numbers formatted to three decimals — a number format
+   alone does nothing to a cell holding text, which is how those columns often
+   arrive;
 5. bolds and highlights the header row yellow across the used columns,
    reapplies the AutoFilter across the whole table so the new column gets a
    dropdown too, and freezes the header row.
