@@ -31,10 +31,11 @@ Applies the house formatting to **every worksheet** in the active workbook.
 
 Run `CC` with the workbook open. Per sheet:
 
-1. Consolas 8 pt, top-left aligned, across the whole sheet;
+1. Consolas 8 pt, top-aligned, across the whole sheet (horizontal alignment
+   is reset to General, so text sits left and numbers sit right);
 2. where the sheet has column headers — i.e. row 1 is not blank — the header
-   row is highlighted yellow across the used columns, an AutoFilter is applied
-   over it, and row 1 is frozen.
+   row is bolded and highlighted yellow across the used columns, an AutoFilter
+   is applied over it, and row 1 is frozen.
 
 Sheets without headers are still formatted, but get no highlight, filter or
 freeze. Sheets holding an Excel Table keep the table's own filter rather than

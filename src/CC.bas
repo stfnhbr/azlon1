@@ -5,9 +5,9 @@ Option Explicit
 '  CC - applies the house formatting to every worksheet in the workbook.
 '
 '  Per sheet:
-'    1. Consolas 8 pt, top-left aligned, across the whole sheet
+'    1. Consolas 8 pt, top-aligned, across the whole sheet
 '    2. where the sheet has column headers (row 1 is not blank):
-'         - row 1 highlighted yellow, across the used columns
+'         - row 1 bolded and highlighted yellow, across the used columns
 '         - AutoFilter applied over the header row
 '         - row 1 frozen
 '
@@ -76,12 +76,13 @@ Private Sub FormatSheet(ws As Worksheet)
     FreezeHeaderRow ws
 End Sub
 
-' Consolas 8 pt, top-left, no wrapping. Merged cells are left alone - this
-' runs over the whole workbook, and unmerging would wreck any sheet that is
-' laid out rather than tabular.
+' Consolas 8 pt, top-aligned, no wrapping. Horizontal alignment is reset to
+' General rather than forced left, so text still sits left and numbers still
+' sit right. Merged cells are left alone - this runs over the whole workbook,
+' and unmerging would wreck any sheet that is laid out rather than tabular.
 Private Sub ApplyBodyFormat(ws As Worksheet)
     With ws.Cells
-        .HorizontalAlignment = xlLeft
+        .HorizontalAlignment = xlGeneral
         .VerticalAlignment = xlTop
         .WrapText = False
         .Orientation = 0
@@ -101,8 +102,10 @@ End Sub
 ' Only the used columns - filling the whole row out to XFD looks wrong the
 ' moment anyone scrolls right.
 Private Sub HighlightHeaderRow(ws As Worksheet, ByVal lastCol As Long)
-    ws.Range(ws.Cells(HEADER_ROW, 1), _
-             ws.Cells(HEADER_ROW, lastCol)).Interior.Color = vbYellow
+    With ws.Range(ws.Cells(HEADER_ROW, 1), ws.Cells(HEADER_ROW, lastCol))
+        .Interior.Color = vbYellow
+        .Font.Bold = True
+    End With
 End Sub
 
 Private Sub ApplyHeaderAutoFilter(ws As Worksheet, ByVal lastRow As Long, ByVal lastCol As Long)
