@@ -27,7 +27,7 @@ Run `HYX` on the sheet holding the export. What it does:
    dropdown too, and freezes the header row.
 
 `HYX` touches nothing outside the active sheet; a protected active sheet stops
-the run with a message. For workbook-wide formatting, use `CC`.
+the run with a message.
 
 The raw export's column positions live in the constants at the top of the
 module (`RAW_TRACK_COL`, `RAW_TIME_FIRST`, `RAW_TIME_LAST`); adjust those if
@@ -35,9 +35,9 @@ the export layout changes.
 
 ## `src/CC.bas`
 
-Applies the house formatting to **every worksheet** in the active workbook.
+Applies the house formatting to the active worksheet.
 
-Run `CC` with the workbook open. Per sheet:
+Run `CC` on the sheet you want formatted:
 
 1. Consolas 8 pt, top-aligned, across the whole sheet (horizontal alignment
    is reset to General, so text sits left and numbers sit right);
@@ -45,9 +45,12 @@ Run `CC` with the workbook open. Per sheet:
    row is bolded and highlighted yellow across the used columns, an AutoFilter
    is applied over it, and row 1 is frozen.
 
-Sheets without headers are still formatted, but get no highlight, filter or
-freeze. Sheets holding an Excel Table keep the table's own filter rather than
-gaining a second, conflicting one. Protected sheets are skipped and listed at
-the end of the run. Merged cells are left as they are, since `CC` runs over
-whole workbooks and unmerging would wreck any sheet that is laid out rather
-than tabular.
+A sheet without headers is still formatted, but gets no highlight, filter or
+freeze. A sheet holding an Excel Table keeps the table's own filter rather than
+gaining a second, conflicting one. A protected sheet stops the run with a
+message. Merged cells are left as they are — unmerging would wreck a sheet that
+is laid out rather than tabular.
+
+Like `HYX`, `CC` touches nothing outside the sheet it is run on. Neither macro
+formats the workbook as a whole: a workbook-wide alignment reset undoes the
+centring other sheets rely on, since General alignment right-aligns numbers.

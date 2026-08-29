@@ -2,19 +2,20 @@ Attribute VB_Name = "modFormatWorkbook"
 Option Explicit
 
 ' ===========================================================================
-'  CC - applies the house formatting to every worksheet in the workbook.
+'  CC - applies the house formatting to the active worksheet.
 '
-'  Per sheet:
+'  What it does:
 '    1. Consolas 8 pt, top-aligned, across the whole sheet
 '    2. where the sheet has column headers (row 1 is not blank):
 '         - row 1 bolded and highlighted yellow, across the used columns
 '         - AutoFilter applied over the header row
 '         - row 1 frozen
 '
-'  Sheets with no headers are still formatted, but get no highlight, filter
-'  or freeze. Protected sheets are skipped and reported at the end.
+'  A sheet with no headers is still formatted, but gets no highlight, filter
+'  or freeze. CC never touches another sheet: resetting alignment across the
+'  workbook would undo the centring another sheet's columns rely on.
 '
-'  Re-runnable: reapplying is a no-op on an already-formatted workbook.
+'  Re-runnable: reapplying is a no-op on an already-formatted sheet.
 ' ===========================================================================
 
 ' The row treated as the header row.
@@ -26,41 +27,32 @@ Private Const BODY_FONT_SIZE As Long = 8
 
 
 Public Sub CC()
-    Dim wb As Workbook
     Dim ws As Worksheet
-    Dim entrySheet As Object
-    Dim skipped As String
 
-    If ActiveWorkbook Is Nothing Then Exit Sub
-    Set wb = ActiveWorkbook
-    Set entrySheet = ActiveSheet
+    If TypeName(ActiveSheet) <> "Worksheet" Then Exit Sub
+    Set ws = ActiveSheet
+
+    If ws.ProtectContents Then
+        MsgBox "'" & ws.Name & "' is protected - unprotect it and run CC again.", _
+               vbExclamation
+        Exit Sub
+    End If
 
     On Error GoTo Cleanup
     Application.ScreenUpdating = False
-    wb.Activate
 
-    For Each ws In wb.Worksheets
-        If ws.ProtectContents Then
-            skipped = skipped & vbLf & "  " & ws.Name
-        Else
-            FormatSheet ws
-        End If
-    Next ws
+    FormatSheet ws
 
 Cleanup:
-    RestoreActiveSheet entrySheet
     Application.ScreenUpdating = True
-
     If Err.Number <> 0 Then
         MsgBox "CC failed: " & Err.Description, vbExclamation
         Err.Clear
-    ElseIf Len(skipped) > 0 Then
-        MsgBox "Skipped these protected sheets:" & vbLf & skipped, vbInformation
     End If
 End Sub
 
 
-' --- per sheet -------------------------------------------------------------
+' --- steps -----------------------------------------------------------------
 
 Private Sub FormatSheet(ws As Worksheet)
     Dim lastRow As Long, lastCol As Long
@@ -78,8 +70,8 @@ End Sub
 
 ' Consolas 8 pt, top-aligned, no wrapping. Horizontal alignment is reset to
 ' General rather than forced left, so text still sits left and numbers still
-' sit right. Merged cells are left alone - this runs over the whole workbook,
-' and unmerging would wreck any sheet that is laid out rather than tabular.
+' sit right. Merged cells are left alone - CC is a formatting pass, and
+' unmerging would wreck a sheet that is laid out rather than tabular.
 Private Sub ApplyBodyFormat(ws As Worksheet)
     With ws.Cells
         .HorizontalAlignment = xlGeneral
@@ -131,12 +123,10 @@ Private Sub ShowTableFilters(ws As Worksheet)
     Next tbl
 End Sub
 
-' Freezing is a window operation, so the sheet has to be the active one -
-' which rules out hidden sheets. Scroll home first: FreezePanes splits
-' relative to the top-left visible cell, not to A1.
+' Freezing is a window operation, so it acts on the active sheet - which ws
+' is, by construction. Scroll home first: FreezePanes splits relative to the
+' top-left visible cell, not to A1.
 Private Sub FreezeHeaderRow(ws As Worksheet)
-    If ws.Visible <> xlSheetVisible Then Exit Sub
-
     ws.Activate
     If ActiveWindow Is Nothing Then Exit Sub
 
@@ -158,14 +148,6 @@ End Sub
 Private Function HasColumnHeaders(ws As Worksheet) As Boolean
     HasColumnHeaders = (Application.CountA(ws.Rows(HEADER_ROW)) > 0)
 End Function
-
-' Puts the caller back where they started, without upsetting the run if that
-' sheet has since been hidden.
-Private Sub RestoreActiveSheet(entrySheet As Object)
-    On Error Resume Next
-    If Not entrySheet Is Nothing Then entrySheet.Activate
-    On Error GoTo 0
-End Sub
 
 ' Last used row / column of the sheet, 0 when the sheet is empty.
 Private Function LastUsedRow(ws As Worksheet) As Long
