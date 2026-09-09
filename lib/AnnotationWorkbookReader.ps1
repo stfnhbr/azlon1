@@ -226,12 +226,17 @@ function Read-AnnotationWorkbook {
         "Completion" and "Refinement" - alongside sheets that do not, such as
         "Summary". Exactly one match binds silently; several ask, through
         ChooseSheet, while the workbook is still open, so Excel is started once.
+
+        A sheet is only a match if it has captions under the headers. A prepared
+        but still empty pass is not a choice worth asking about, and the sheet
+        picked would have thrown "holds no captions" a moment later anyway.
     .PARAMETER Sheet
         Bind this sheet instead of searching. Compared case-sensitively, since
         these names sometimes differ only by a trailing space.
     .PARAMETER ChooseSheet
-        Called with the matching sheet names when there is more than one; must
-        return one of them, or $null to cancel.
+        Called when more than one sheet matches, with one object per candidate
+        carrying Name and Count (its captions). Must return one of the names, or
+        $null to cancel.
     #>
     [CmdletBinding()]
     param(
@@ -253,15 +258,29 @@ function Read-AnnotationWorkbook {
         # stops to ask about anything would hang a hidden process.
         $book = $excel.Workbooks.Open($full, 0, $true)
 
+        # Every candidate is read here, before anything is chosen: an empty one
+        # can then be left out of the question entirely, the picker can say how
+        # many captions each holds, and the sheet that wins does not have to be
+        # read a second time. One block read per sheet, so it is cheap.
+        #
         # Not $matches: that is the automatic variable -match writes into, and
         # PowerShell variable names are case-insensitive, so the name is taken.
         $found = New-Object System.Collections.Specialized.OrderedDictionary
+        $blank = New-Object System.Collections.Generic.List[string]
         foreach ($ws in $book.Worksheets) {
             $block = Find-AnnotationHeaderBlock -Sheet $ws
-            if ($block) { $found[$ws.Name] = $block }
+            if (-not $block) { continue }
+            $rows = Get-AnnotationRows -Sheet $ws -Block $block
+            if (@($rows).Count -eq 0) { $blank.Add($ws.Name); continue }
+            $found[$ws.Name] = $rows
         }
 
         if ($found.Count -eq 0) {
+            if ($blank.Count -gt 0) {
+                throw ("$([System.IO.Path]::GetFileName($full)) has no sheet with captions on it." +
+                       "`n`nThese carry the annotation columns but nothing underneath them: " +
+                       ($blank -join ', ') + '.')
+            }
             throw ("$([System.IO.Path]::GetFileName($full)) has no sheet carrying the annotation " +
                    "columns.`n`nA sheet needs at least: " +
                    ($script:AnnotationRequired -join ', ') + '.')
@@ -272,6 +291,14 @@ function Read-AnnotationWorkbook {
         if ($Sheet) {
             foreach ($key in $names) { if ($key -ceq $Sheet) { $name = $key; break } }
             if (-not $name) {
+                # Named an empty one: say so, rather than listing the sheets and
+                # leaving the user to wonder where theirs went.
+                foreach ($key in $blank) {
+                    if ($key -ceq $Sheet) {
+                        throw ("$([System.IO.Path]::GetFileName($full)) sheet '$Sheet' carries the " +
+                               "annotation columns but no captions underneath them.")
+                    }
+                }
                 throw ("$([System.IO.Path]::GetFileName($full)) has no annotation sheet called " +
                        "'$Sheet'.`n`nIt has: " + ($names -join ', '))
             }
@@ -280,7 +307,10 @@ function Read-AnnotationWorkbook {
             $name = $names[0]
         }
         elseif ($ChooseSheet) {
-            $name = & $ChooseSheet $names
+            $choices = @(foreach ($key in $names) {
+                [pscustomobject]@{ Name = $key; Count = @($found[$key]).Count }
+            })
+            $name = & $ChooseSheet $choices
             if (-not $name) { return $null }
             if (-not $found.Contains($name)) { throw "No annotation sheet called '$name'." }
         }
@@ -290,13 +320,10 @@ function Read-AnnotationWorkbook {
                    ".`n`nSay which with -Sheet.")
         }
 
-        $ws = $book.Worksheets.Item($name)
-        $rows = Get-AnnotationRows -Sheet $ws -Block $found[$name]
-
         return [pscustomobject]@{
             Path  = $full
             Sheet = $name
-            Rows  = $rows
+            Rows  = $found[$name]
         }
     }
     finally {

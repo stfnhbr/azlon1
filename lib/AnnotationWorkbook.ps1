@@ -73,7 +73,11 @@ function Show-Workbooks {
     }
     $hwnd = if ($firstHwnd -ne [IntPtr]::Zero) { $firstHwnd } else { [IntPtr]$Excel.Hwnd }
     [void][AutoNyx.Win32]::ShowWindow($hwnd, 9)          # SW_RESTORE
-    [void][AutoNyx.Win32]::SetForegroundWindow($hwnd)
+    # Where lib\Dialogs.ps1 is loaded too - the hotkey routes - go through its
+    # focus fix: called from a process that does not hold the foreground,
+    # SetForegroundWindow alone is refused and Excel opens behind Audacity.
+    if ('AutoNyx.Foreground' -as [type]) { [AutoNyx.Foreground]::Force($hwnd) }
+    else { [void][AutoNyx.Win32]::SetForegroundWindow($hwnd) }
 }
 
 function Get-FreePath {
@@ -141,6 +145,49 @@ $script:AnnotationLayouts = @{
 # old headers back.
 $script:AnnotationLayout = 'SoupEE'
 
+# "12 Insect chirping" - the caption number MakeSoundNouns.ps1 writes in front
+# of every label, so a label in Audacity can be traced back to its row. Six
+# digits is far more than any sheet carries, and the space is required: a noun
+# is never a number on its own.
+$script:CaptionNumberPrefix = '^\s*(?<num>[0-9]{1,6})\s+(?<text>\S.*)$'
+
+function Get-CaptionNumbering {
+    <#
+    .SYNOPSIS
+        The caption numbers carried in the label texts - one @{ Number; Text }
+        per row - or $null when they are not all there.
+    .DESCRIPTION
+        Labels built from a workbook carry its caption number in front of the
+        text, so a project that came out of a sheet can go back into one keeping
+        that numbering instead of being renumbered down the page. The number is
+        split off here and the text comes out clean.
+
+        All or nothing, deliberately. Numbering some rows from their text and
+        the rest by position mixes two numberings in one column and can hand out
+        the same number twice; a repeat says the same thing, since the caption
+        numbers of a sheet are distinct. Either case falls back to plain 1..n
+        for the lot - which is what this did before the numbers existed - and a
+        label somebody typed by hand is then no worse than it ever was.
+    #>
+    param($Items)
+
+    $numbering = New-Object System.Collections.ArrayList
+    $seen = @{}
+    foreach ($row in $Items) {
+        $text = [string]$row.Text
+        if ($text -notmatch $script:CaptionNumberPrefix) { return $null }
+        $number = [int]$Matches['num']
+        if ($seen.ContainsKey($number)) { return $null }
+        $seen[$number] = $true
+        [void]$numbering.Add([pscustomobject]@{ Number = $number; Text = $Matches['text'].Trim() })
+    }
+
+    if ($numbering.Count -eq 0) { return $null }
+    # Comma first: a project holding a single label would otherwise come back as
+    # the entry itself rather than a list of one.
+    return , $numbering.ToArray()
+}
+
 function Write-AnnotationWorkbook {
     <#
     .SYNOPSIS
@@ -149,7 +196,10 @@ function Write-AnnotationWorkbook {
         Layout comes from $AnnotationLayouts above - edit that table to add,
         rename or reorder columns. A row property that is absent (e.g. Track on
         the .txt route, which has no track information) leaves its cell empty.
-        Caption Number is generated here, numbering the rows as written.
+
+        Caption Number is generated here, numbering the rows as written - unless
+        every label carries its own in front of the text, in which case those
+        are used and the text is written without them. See Get-CaptionNumbering.
     .PARAMETER Layout
         Which column layout to write. Defaults to $AnnotationLayout, so both
         routes stay in step unless a caller deliberately asks otherwise.
@@ -171,6 +221,9 @@ function Write-AnnotationWorkbook {
     foreach ($r in $Rows) { [void]$items.Add($r) }
     $count = $items.Count
 
+    # $null unless every label carries a caption number of its own.
+    $numbering = Get-CaptionNumbering -Items $items
+
     $book  = $Excel.Workbooks.Add()
     $sheet = $book.Worksheets.Item(1)
     # Excel rejects these in sheet names, and truncates past 31 chars.
@@ -188,7 +241,10 @@ function Write-AnnotationWorkbook {
             $source = $columns[$c].Source
             $value = switch ($source) {
                 $null           { $null }                       # nobody fills this one yet
-                'CaptionNumber' { $i + 1 }                      # generated, not read off the row
+                # Generated, not read off the row - except where the labels
+                # brought their own numbers, which then lead the text as well.
+                'CaptionNumber' { if ($numbering) { $numbering[$i].Number } else { $i + 1 } }
+                'Text'          { if ($numbering) { $numbering[$i].Text }   else { $r.Text } }
                 default         { $r.PSObject.Properties[$source].Value }
             }
             # Parentheses required: "," binds tighter than "+" in PowerShell.

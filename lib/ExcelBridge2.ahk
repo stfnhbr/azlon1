@@ -206,10 +206,15 @@ class ExcelBridge2 {
         index := start
         while (index <= stop) {
             header := headers[index]
-            if (header != "" && !columns.Has(header))
+            if (header != "")
                 for want in ExcelBridge2.Schema
-                    if (header = want) {
-                        columns[header] := index + firstCol - 1
+                    if (header = want && !columns.Has(want)) {
+                        ; Comparisons above are intentionally case-insensitive,
+                        ; but Map keys are case-sensitive. Keep the canonical
+                        ; schema spelling so Fields[header] and HasColumn() use
+                        ; the same key even when Excel says, for example,
+                        ; "Annotationtext" instead of "AnnotationText".
+                        columns[want] := index + firstCol - 1
                         break
                     }
             index++

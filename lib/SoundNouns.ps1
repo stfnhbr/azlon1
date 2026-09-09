@@ -39,6 +39,63 @@ $script:SoundNounLine = '^(?<start>-?[0-9]+(\.[0-9]+)?)\t(?<end>-?[0-9]+(\.[0-9]
 # pure ASCII sidesteps that entirely.
 $script:SoundNounPrefix = '^(?<num>[0-9]+)\s*[\u2013\u2014-]\s*(?<text>.+)$'
 
+function Get-ForeignFileKind {
+    <#
+    .SYNOPSIS
+        Names what this file plainly is when it is not a caption file at all,
+        or '' when it looks like text and should simply be parsed.
+    .DESCRIPTION
+        The caption files sit in the same folder as the workbooks they were made
+        from, and the picker offers "All files", so choosing the .xlsx is an
+        easy slip - and the one mistake the parser cannot describe. Left to
+        itself it reads the workbook as UTF-8, splits the compressed bytes on
+        whatever happens to look like a newline, and reports
+
+            Book1.xlsx: 42 line(s) are not 'start<TAB>end<TAB>caption'
+              line 1: PK...
+
+        which is true of the bytes, says nothing about the mistake, and sends
+        the reader off to check a sheet that was never read.
+
+        Recognised by the leading bytes rather than by the extension: a workbook
+        saved as .txt is still a workbook, and that is the case where guessing
+        from the name costs the most time.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $head   = New-Object byte[] 16
+    $read   = 0
+    $stream = [System.IO.File]::OpenRead($Path)
+    try     { $read = $stream.Read($head, 0, $head.Length) }
+    finally { $stream.Dispose() }
+    if ($read -le 0) { return '' }
+
+    # "PK" - the Zip local-file header every modern Office file opens with.
+    if ($read -ge 2 -and $head[0] -eq 0x50 -and $head[1] -eq 0x4B) {
+        switch ([System.IO.Path]::GetExtension($Path).ToLowerInvariant()) {
+            '.xlsx'  { return 'an Excel workbook' }
+            '.xlsm'  { return 'an Excel workbook' }
+            '.docx'  { return 'a Word document' }
+            default  { return 'a Zip archive' }
+        }
+    }
+    # The OLE2 compound file the older .xls and .doc are wrapped in.
+    if ($read -ge 4 -and $head[0] -eq 0xD0 -and $head[1] -eq 0xCF -and
+        $head[2] -eq 0x11 -and $head[3] -eq 0xE0) {
+        return 'an older Excel or Word file'
+    }
+    # Audacity's own project files are SQLite databases.
+    if ($read -ge 15 -and
+        (-join ($head[0..14] | ForEach-Object { [char]$_ })) -eq 'SQLite format 3') {
+        return 'an Audacity project'
+    }
+    # Whatever else it is, a UTF-8 caption file does not carry a NUL byte.
+    if ($head[0..($read - 1)] -contains 0) { return 'a binary file' }
+
+    return ''
+}
+
 function Read-SoundNounFile {
     <#
     .SYNOPSIS
@@ -73,6 +130,20 @@ function Read-SoundNounFile {
 
     if (-not (Test-Path -LiteralPath $Path)) {
         throw "Cannot find the caption file:`n$Path"
+    }
+
+    # Before reading a byte of it as text - see Get-ForeignFileKind. Naming the
+    # right hotkey here is the whole point: picking the workbook is not a typo
+    # to be corrected but the other tool being reached for, and the reader is
+    # one keystroke away from what they wanted.
+    $foreign = Get-ForeignFileKind -Path $Path
+    if ($foreign) {
+        throw ("$([System.IO.Path]::GetFileName($Path)) is $foreign, not a caption file.`n`n" +
+               "Ctrl+Shift+Alt+I imports the annotation site's " +
+               "'..._sound_nouns.txt'.`n" +
+               "To build label tracks from a workbook, press Ctrl+Shift+Alt+N " +
+               "instead - it reads the sheet, writes that caption file, and " +
+               "imports it in one go.")
     }
 
     # Read as UTF-8 explicitly. Get-Content on Windows PowerShell 5.1 falls back

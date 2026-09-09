@@ -39,13 +39,11 @@ $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+# Show-Problem, Invoke-WithOwner and the focus fix behind them, shared with the
+# other two hotkey scripts. $DialogTitle below is what they put in the title bar.
+. (Join-Path $PSScriptRoot 'lib\Dialogs.ps1')
 
-function Show-Problem {
-    param([string]$Message)
-    [System.Windows.Forms.MessageBox]::Show($Message, 'Export annotations',
-        [System.Windows.Forms.MessageBoxButtons]::OK,
-        [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
-}
+$DialogTitle = 'Export annotations'
 
 try {
     $rows = Get-AudacityAnnotations
@@ -67,19 +65,11 @@ try {
         $dialog.FileName         = "$($context.Name).xlsx"
 
         # PowerShell is launched hidden by the hotkey, so the dialog has no
-        # natural owner and would open behind Audacity. A topmost stub form
-        # gives it one and pulls it to the front.
-        $owner = New-Object System.Windows.Forms.Form
-        $owner.TopMost = $true; $owner.ShowInTaskbar = $false
-        $owner.StartPosition = 'Manual'; $owner.Location = New-Object System.Drawing.Point(-2000, -2000)
-        $owner.Size = New-Object System.Drawing.Size(1, 1)
-        $owner.Show(); $owner.Activate()
-        try {
-            $result = $dialog.ShowDialog($owner)
-        } finally {
-            $owner.Close(); $owner.Dispose()
-        }
-
+        # natural owner and would open behind Audacity. Invoke-WithOwner gives it
+        # one and makes the activation stick - a stub form on its own is not
+        # enough, since Windows refuses the foreground to a process that does not
+        # already hold it, and the dialog then sits behind Audacity unseen.
+        $result = Invoke-WithOwner { param($owner) $dialog.ShowDialog($owner) }
         if ($result -ne [System.Windows.Forms.DialogResult]::OK) { exit 0 }
         $OutPath = $dialog.FileName
     }

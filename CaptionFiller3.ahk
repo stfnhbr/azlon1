@@ -11,11 +11,17 @@
     1. The columns sit in four blocks between the two dividers, grouped by what
        they are rather than by where they fall in the sheet:
 
-           A   Caption Number, TrackNumber          read-only context
-           B   Track, TrackDescription              the track, filled
+           A   Track, TrackDescription              the track, filled
+           B   TrackNumber, Caption Number          read-only context
            C   AnnotationText, SourceVisibility,    the annotation, filled
                SourceDescription, Prominence          and its context
            D   StartTime(s), EndTime(s)             the times, filled
+
+       The track leads because it is what you work through. Its own row carries
+       a second pair of Track buttons, next to the ones up in the navigation
+       strip, and the block below it repeats the track's name in bold beside
+       the track number - so the name is still in front of you once the Track
+       block is folded away.
 
     2. No Min buttons, and no decimal seconds either. A time offers Sec and Ms
        and nothing else: its column name is a tag, not a button, because 90.500
@@ -73,19 +79,32 @@ class Sym {
     line up - and every row spans the same 578px as the dividers above and
     below it:
 
+        strip           416 + 6 + 76 + 4 + 76                      = 578
         fill / read     170 + 8 + 400                              = 578
+        fill + Track    170 + 8 + 238 + 6 + 76 + 4 + 76            = 578
+        read + name     170 + 8 +  56 + 8 + 336                    = 578
         time            170 + 8 + 120 + 4 + 71 + 10 + 120 + 4 + 71 = 578
+
+    The strip is in that list because it now has to be: its Track buttons and
+    the Track row's stand one above the other, and 416 is what puts the two
+    pairs in the same column. The strip used to stop 16px short, which nothing
+    lined up against and so nobody could see.
 
     Everything the GUI reads has to be assigned before Main() runs, which is why
     this lives up here with the rest of the constants rather than beside
     BuildGui: the auto-execute section stops at the Main() call below, and a
     global assigned after it is still empty when the window is built.  */
 class Width {
-    static LABEL := 170       ; first column: a tag or the row's own button
-    static VALUE := 400       ; the cell as it stands
-    static PART  := 120       ; a Sec or Ms button
-    static PVAL  :=  71       ; and the box beside it
-    static ROW   := 578       ; dividers, status line
+    static LABEL  := 170      ; first column: a tag or the row's own button
+    static VALUE  := 400      ; the cell as it stands
+    static PART   := 120      ; a Sec or Ms button
+    static PVAL   :=  71      ; and the box beside it
+    static NAV    :=  76      ; a Track or Cap button, in the strip or on a row
+    static STRIP  := 416      ; the strip's text, left of its pair of buttons
+    static NARROW := 238      ; the cell on the row those buttons share
+    static NUM    :=  56      ; the cell holding only a track number
+    static NAME   := 336      ; the track's name, bold, beside that number
+    static ROW    := 578      ; dividers, status line
 
     /*  Heights. BOX_H is why the value boxes are not as tall as the controls
         beside them: a single-line Edit draws its text at the top of its box
@@ -136,9 +155,12 @@ class Band {
 class Tint {
     static PAPER := "FFFFFF"    ; the boxes a value is still sent from
 
+    /*  The letters run in screen order, so a tint moves with its block rather
+        than with its letter: green led the second block when the caption
+        numbers came first, and leads the first one now that the track does.  */
     static BLOCK := Map(
-        "A", "E0F2FE",      ; Caption Number, TrackNumber
-        "B", "D1FAE5",      ; Track, TrackDescription
+        "A", "D1FAE5",      ; Track, TrackDescription
+        "B", "E0F2FE",      ; TrackNumber, Caption Number
         "C", "FEF9C3",      ; AnnotationText and its context
         "D", "FFE4E6")      ; StartTime(s), EndTime(s)
 
@@ -177,13 +199,18 @@ class Chip {
     block groups the rows on screen and picks the tint behind them.
     font, where a row has one, restyles that row's value box: weight, slant and
     colour, over whatever typeface the window is already using.
+    nav puts a second pair of Track buttons on the row, at the cost of part of
+    its value box; trailer names a second field to show in bold after this
+    row's, in a box of its own because one Edit draws one font throughout.
     prefix builds the part keys ("start" + "Sec"), short names them on screen.  */
 FIELDS := [
-    { field: "captionNo" , label: "Caption Number"    , kind: "read", block: "A" },
-    { field: "trackNo"   , label: "TrackNumber"       , kind: "read", block: "A" },
+    { field: "track"     , label: "Track"             , kind: "fill", block: "A"
+                         , nav: true },
+    { field: "trackDesc" , label: "TrackDescription"  , kind: "fill", block: "A" },
 
-    { field: "track"     , label: "Track"             , kind: "fill", block: "B" },
-    { field: "trackDesc" , label: "TrackDescription"  , kind: "fill", block: "B" },
+    { field: "trackNo"   , label: "TrackNumber"       , kind: "read", block: "B"
+                         , trailer: "track" },
+    { field: "captionNo" , label: "Caption Number"    , kind: "read", block: "B" },
 
     { field: "annotation", label: "AnnotationText"    , kind: "fill", block: "C"
                          , font: "Bold Italic c0000CC" },
@@ -208,11 +235,15 @@ FIELDS := [
     the mechanism reads the block letter off FIELDS like everything else, so
     adding a letter here is all another one would take.
 
+    Folding this block takes its Track buttons with it. That costs nothing: the
+    pair in the navigation strip is always on the window, and the bold name in
+    the block below still says which track you are on.
+
     Folding is a layout change, so the window is rebuilt rather than reshuffled:
     the band behind each block is measured from the rows standing on it, and
     letting BuildGui measure again is both shorter and safer than moving
     everything by hand and hoping the arithmetic agrees.  */
-FOLDABLE := Map("B", "Track")
+FOLDABLE := Map("A", "Track")
 
 /*  The two boxes a time is typed into, in website order. No Min: see the note
     at the top, and TimeParts below, which adds the minutes back into Sec.  */
@@ -312,7 +343,12 @@ Main() {
         bridge.Load()
         bound := choice
     } catch as e {
-        MsgBox(e.Message, APP_TITLE, "Iconx")
+        detail := e.Message
+        if e.File != ""
+            detail .= "`n`n" e.File " (line " e.Line ")"
+        if e.What != ""
+            detail .= "`n" e.What
+        MsgBox(detail, APP_TITLE, "Iconx")
         ExitApp
     }
 
@@ -405,20 +441,22 @@ BuildGui(atX := "", atY := "") {
     win.MarginX := 10, win.MarginY := 8
     ui["gui"] := win
 
-    ; --- orientation and navigation ---
-    ui["trackText"] := win.Add("Text", "w400 h18", "Track -")
-    btn := win.Add("Button", "x+6 yp-2 w76 h24", Sym.PREV " Track")
-    btn.OnEvent("Click", (*) => GoTrack(-1))
-    ui["prevTrack"] := btn
-    btn := win.Add("Button", "x+4 yp w76 h24", "Track " Sym.NEXT)
-    btn.OnEvent("Click", (*) => GoTrack(1))
-    ui["nextTrack"] := btn
+    /*  The Track buttons stand in two places - the strip here and the Track
+        row down in block A - so ui keeps lists of them rather than one control
+        each. ShowCaption enables whatever is in the lists, which is how the
+        row's pair simply stops existing while the block is folded.  */
+    ui["prevTrack"] := []
+    ui["nextTrack"] := []
 
-    ui["captionText"] := win.Add("Text", "xm y+6 w400 h18", "Caption -")
-    btn := win.Add("Button", "x+6 yp-2 w76 h24", Sym.PREV " Cap")
+    ; --- orientation and navigation ---
+    ui["trackText"] := win.Add("Text", "w" Width.STRIP " h18", "Track -")
+    AddTrackNav(win, "x+6 yp-2", 24)
+
+    ui["captionText"] := win.Add("Text", "xm y+6 w" Width.STRIP " h18", "Caption -")
+    btn := win.Add("Button", "x+6 yp-2 w" Width.NAV " h24", Sym.PREV " Cap")
     btn.OnEvent("Click", (*) => GoCaption(-1))
     ui["prevCaption"] := btn
-    btn := win.Add("Button", "x+4 yp w76 h24", "Cap " Sym.NEXT)
+    btn := win.Add("Button", "x+4 yp w" Width.NAV " h24", "Cap " Sym.NEXT)
     btn.OnEvent("Click", (*) => GoCaption(1))
     ui["nextCaption"] := btn
 
@@ -477,14 +515,27 @@ BuildGui(atX := "", atY := "") {
         }
 
         if (entry.kind = "fill") {
-            first := win.Add("Button", "xm y+" gap " w" Width.LABEL " h26", "   " entry.label)
+            first := win.Add("Button", "xm y+" gap " w" Width.LABEL " h" Width.BTN_H, "   " entry.label)
             first.OnEvent("Click", Fill.Bind(key))
             ui["btn_" key] := first
+            first.GetPos(&rowX, &rowY)
+
+            /*  A row carrying the Track buttons gives up part of its box to
+                them. They go on before the box, at coordinates worked out from
+                the row rather than from the control before them, so that the
+                box is still the last thing added: the next row is placed y+gap
+                below whatever that was, and measuring from a 26px button
+                instead of the 18px box would open a gap no other row has.  */
+            wide := entry.HasOwnProp("nav") ? Width.NARROW : Width.VALUE
+            if entry.HasOwnProp("nav")
+                AddTrackNav(win, "x" (rowX + Width.LABEL + 8 + wide + 6) " y" rowY, Width.BTN_H)
+
             ; White on purpose, and said outright: a ReadOnly Edit left to
             ; itself comes up in the dialog grey, which on a tinted band reads
             ; as a hole rather than as a field. White keeps every box you can
             ; still send from legible against whatever colour it stands on.
-            ui["value_" key] := win.Add("Edit", "x+8 yp+" onButton " w" Width.VALUE " h" Width.BOX_H " ReadOnly -E0x200 +Background" Tint.PAPER)
+            ui["value_" key] := win.Add("Edit", "x" (rowX + Width.LABEL + 8) " y" (rowY + onButton)
+                                              . " w" wide " h" Width.BOX_H " ReadOnly -E0x200 +Background" Tint.PAPER)
         } else if (entry.kind = "time") {
             /*  A tag, not a button. The decimal seconds it used to offer are
                 not a shape any box on the website takes, so there is nothing
@@ -521,7 +572,18 @@ BuildGui(atX := "", atY := "") {
             ; the band so it reads as part of the block rather than as a field.
             first := win.Add("Text", "xm y+" gap " w" Width.LABEL " h" Width.LBL_H " Center +0x200 +Background" shade
                            , entry.label)
-            ui["value_" key] := win.Add("Edit", "x+8 yp+" onLabel " w" Width.VALUE " h" Width.BOX_H " ReadOnly -E0x200 +Background" shade)
+            wide := entry.HasOwnProp("trailer") ? Width.NUM : Width.VALUE
+            ui["value_" key] := win.Add("Edit", "x+8 yp+" onLabel " w" wide " h" Width.BOX_H " ReadOnly -E0x200 +Background" shade)
+            /*  A second field after this one, in bold: the track's name after
+                its number. It needs a control of its own because an Edit draws
+                one font over the whole box, so a number and a bold name cannot
+                share one. Text, not Edit, since nothing is ever sent from it -
+                and on the band's tint, so it reads as part of the row.  */
+            if entry.HasOwnProp("trailer") {
+                trail := win.Add("Text", "x+8 yp w" Width.NAME " h" Width.BOX_H " +0x200 +Background" shade)
+                trail.SetFont("Bold")
+                ui["trail_" key] := trail
+            }
         }
 
         /*  A row may restyle its own value box - see the font entry in FIELDS.
@@ -645,6 +707,12 @@ ShowCaption() {
             continue
         }
         ui["value_" entry.field].Value := shown
+        /*  The bold name beside the number. It is read whether or not the block
+            it belongs to is on screen - the values above are gathered from the
+            sheet, not from the window - so folding the Track block away leaves
+            the name here standing.  */
+        if ui.Has("trail_" entry.field)
+            ui["trail_" entry.field].Value := values[entry.trailer]
         if (entry.kind = "read")
             continue
         ui["btn_" entry.field].Enabled := (present && value != "")
@@ -652,8 +720,13 @@ ShowCaption() {
 
     ui["prevCaption"].Enabled := (index > 1)
     ui["nextCaption"].Enabled := (index < bridge.rows.Length)
-    ui["prevTrack"].Enabled := (AdjacentTrack(-1) != 0)
-    ui["nextTrack"].Enabled := (AdjacentTrack(1) != 0)
+    ; Every Track button on the window, however many are currently on it.
+    backward := (AdjacentTrack(-1) != 0)
+    forward  := (AdjacentTrack(1) != 0)
+    for btn in ui["prevTrack"]
+        btn.Enabled := backward
+    for btn in ui["nextTrack"]
+        btn.Enabled := forward
 
     MarkNext()
     Status(Shorten(record.annotation, 80))
@@ -739,6 +812,27 @@ SetCorners(hwnd, w, h, diameter) {
                     , "Int", diameter, "Int", diameter, "Ptr")
     if region
         DllCall("SetWindowRgn", "Ptr", hwnd, "Ptr", region, "Int", true)
+}
+
+/*  The pair of Track buttons: back to the first caption of the previous track
+    number, on to the first of the next.
+
+    Built here rather than twice over, because they appear twice: once in the
+    navigation strip at the top and once on the Track row itself, where they sit
+    beside the track they move between. firstOpt places the left button - the
+    right one follows it - and height matches whatever line it lands on, 24 in
+    the strip and a row's full 26 in the block.
+
+    Both go into the ui lists, and nowhere else: nothing addresses one of these
+    buttons on its own, so there is nothing to tell them apart by.  */
+AddTrackNav(win, firstOpt, height) {
+    global ui
+    btn := win.Add("Button", firstOpt " w" Width.NAV " h" height, Sym.PREV " Track")
+    btn.OnEvent("Click", (*) => GoTrack(-1))
+    ui["prevTrack"].Push(btn)
+    btn := win.Add("Button", "x+4 yp w" Width.NAV " h" height, "Track " Sym.NEXT)
+    btn.OnEvent("Click", (*) => GoTrack(1))
+    ui["nextTrack"].Push(btn)
 }
 
 /*  Puts a control underneath every other control on the window.  */

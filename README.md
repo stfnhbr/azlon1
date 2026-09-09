@@ -16,13 +16,17 @@ To arm the hotkey, double-click **`Audacity annotation hotkey.ahk`** (an "H"
 icon appears in the tray). To have it armed after every login, press `Win+R`,
 run `shell:startup`, and drop a shortcut to that file in the folder that opens.
 
-This route reads Audacity directly through `mod-script-pipe`, so there is no
-Export Labels step — and unlike Audacity's own `.txt` export, it keeps the name
-of the label track each annotation came from.
+On **Audacity 3.7.9** this route reads Audacity directly through
+`mod-script-pipe`, so there is no Export Labels step — and unlike Audacity's own
+`.txt` export, it keeps the name of the label track each annotation came from.
 
-Requires `mod-script-pipe` set to **Enabled** under
+That requires `mod-script-pipe` set to **Enabled** under
 *Edit > Preferences > Modules* (already the case here), and a restart of
 Audacity after changing that setting.
+
+The same key works in **Audacity 4.0**, which has no pipe to speak to; it reads
+the project file instead, and keeps the track names just the same. See
+[Audacity 4.0](#6-audacity-40--the-same-keys-a-different-way-in).
 
 ## 2. Drag and drop an exported .txt
 
@@ -43,7 +47,7 @@ or III without renaming anything.
 
 | # | Column | Filled by |
 |---|---|---|
-| 1 | Caption Number | generated — 1..n down the sheet |
+| 1 | Caption Number | generated — 1..n down the sheet, or the number the labels carry where every one of them has it (see [3b](#3b-workbook-in-label-tracks-out--one-press)) |
 | 2 | TrackNumber | Audacity — the label track's position (hotkey route only) |
 | 3 | Track | Audacity — e.g. `3 Bird Sounds`, whatever the track is called (hotkey route only). Tracks built by [the import](#3-numbered-captions-in-one-label-track-per-category) are named `<number> <track name>`, so a name put in there comes back out here |
 | 4 | TrackDescription | *empty, for you* |
@@ -52,7 +56,7 @@ or III without renaming anything.
 | 7 | SourceVisibility | *empty, for you* |
 | 8 | SourceDescription | *empty, for you* |
 | 9 | Prominence | *empty, for you* |
-| 10 | AnnotationText | Audacity — the label text |
+| 10 | AnnotationText | Audacity — the label text, with the caption number split off into column 1 where there is one |
 
 To add, rename or reorder columns, edit the `$AnnotationLayouts` table at the top
 of `lib\AnnotationWorkbook.ps1` — headers, number formats and widths all come
@@ -159,6 +163,18 @@ kept, next to the workbook and named after it — `POW R0.xlsx` sheet `Refinemen
 becomes `POW R0 - Refinement Sound Nouns.txt` — so it can be re-imported later
 without asking again.
 
+**Each label carries its caption number**, so a label heard in Audacity can be
+found again in the sheet — caption 12 reads `12 Insect chirping`, on a track
+still called `8 Insect Chirping`. The number comes straight out of the workbook's
+Caption Number column, not from Claude, and `-NoCaptionNumbers` leaves it off.
+
+It also survives the way back: Ctrl+Shift+Alt+K splits the number off the text
+again and puts it in column 1, so a workbook that goes out to Audacity and comes
+back keeps its own numbering instead of being renumbered down the page. That
+happens only when *every* label carries one — a single label typed by hand is
+enough to fall back to plain 1..n for the lot, since half a numbering is worse
+than none.
+
 **Claude is asked for the noun and nothing else.** Start, end, the category
 number and the track name are copied out of the workbook by the script, so they
 cannot come back wrong. This matters: the files made by hand had fields three and
@@ -170,15 +186,26 @@ this is done through Claude on the web, so there is one copy of them and no
 chance of the two drifting.
 
 **Everything checkable is checked before the model is called**: one track number
-must carry one track name, every row needs a number and a name, times must parse
-and not run backwards. A workbook that breaks any of it says so immediately,
-naming the rows, rather than after a minute of waiting. Afterwards the finished
-file goes through the same parser the import uses before Audacity is touched at
-all.
+must carry one track name, a named track needs a number, times must parse and
+not run backwards. A workbook that breaks any of it says so immediately, naming
+the rows, rather than after a minute of waiting. Afterwards the finished file
+goes through the same parser the import uses before Audacity is touched at all.
 
-A workbook holding several annotation sheets — `Completion` and `Refinement`
-alongside a `Summary` that isn't one — asks which to use; exactly one match binds
-silently.
+**Captions naming no track are kept, not refused.** A blank `Track` cell used to
+stop the whole run for want of anything to call the track. They are now gathered
+onto one track of their own called `No Track`, numbered after the highest the
+sheet uses so it lands at the bottom of the project — work nobody has assigned
+yet is still worth hearing in place. Fill the cells in later and the next run
+files those captions normally, since a track exported as `9 No Track` reads back
+as an ordinary number and name.
+
+**The annotation sheet is found for you.** A workbook holding several — a
+`Completion` pass and a `Refinement` pass, alongside a `Summary` that carries no
+captions — asks which to use, listing each with the number of captions on it,
+since the names alone rarely say which pass is the finished one. Exactly one
+match binds silently, and a sheet with the columns but nothing underneath them is
+not a match, so a pass that has been prepared and not yet filled in never becomes
+a question.
 
 Existing label tracks still get the replace / add-alongside / cancel prompt from
 [section 3](#3-numbered-captions-in-one-label-track-per-category) — that guard is
@@ -193,6 +220,7 @@ on.
 MakeSoundNouns.ps1 -Path "POW R0.xlsx"     # skip the picker
                    -Sheet Refinement       # skip the sheet question
                    -Model claude-sonnet-5  # default is claude-opus-5
+                   -NoCaptionNumbers       # labels read "Insect chirping", not "12 Insect chirping"
                    -NoImport               # write the .txt and stop
                    -Replace                # existing label tracks: replace them
                    -KeepExisting           # existing label tracks: add alongside
@@ -303,11 +331,60 @@ matters: binding to the wrong block would type `FALSE` into the website.
 This tool shares no code with `CaptionFiller.ahk`. Each has its own bridge, so a
 change made for one schema cannot break the other.
 
+## 6. Audacity 4.0 — the same keys, a different way in
+
+Audacity 4.0 ships **no scripting interface at all**: no `mod-script-pipe`, no
+`modules` folder, nothing to send a command to. Everything the three hotkeys did
+was built on that pipe, so on 4.0 none of it could work as written.
+
+What 4.0 did keep is the file format. An `.aup4` is a SQLite database with the
+same `project` and `autosave` tables an `.aup3` has, holding the same
+`ProjectSerializer` binary XML, down to the same `<labeltrack name=…>` with the
+same `<label t= t1= title=>` inside it. So the project file is the way in, and
+because the format did not change it is one way in for both versions.
+
+The keys are unchanged. Which Audacity you pressed them in decides the route,
+and AutoHotkey passes that along so nothing has to be guessed:
+
+| | Audacity 3.7.9 | Audacity 4.0 |
+|---|---|---|
+| **Ctrl+Shift+Alt+K** export | over the pipe, live | reads the project file |
+| **Ctrl+Shift+Alt+I** import | over the pipe, live | writes the project file |
+| **Ctrl+Shift+Alt+N** nouns | over the pipe, live | writes the project file |
+
+Two things are worth knowing before you press a key in 4.0.
+
+**Reading is live, not stale.** 4.0 keeps unsaved work in the project's
+`autosave` table — and for a project never yet saved, in an `.aup4unsaved` file
+under `%LOCALAPPDATA%\Audacity\Audacity4\SessionData`. The export reads whichever
+of those is current, so it sees the labels on screen, not the last save.
+
+**Writing needs the project closed.** Labels are written straight into the file,
+and Audacity would write its own picture of the project back over them on its
+next save. So: save and close the project in 4.0, press the key, and answer Yes
+when it offers to open the project again. The scripts check, and refuse with
+that explanation rather than writing into a file Audacity is holding.
+
+Every write copies the project to `NAME (before labels 2026-09-09 143811).aup4`
+first, and reads the file back off the disk and counts the tracks before calling
+it a success.
+
+If both versions are open at once and you run a script by hand rather than by
+hotkey, it will not guess — pass `-Version 3` or `-Version 4`.
+
+The originals are untouched and still work: `ExportAnnotations.ps1`,
+`ImportSoundNouns.ps1` and `MakeSoundNouns.ps1` are still the 3.7.9 route, and
+are what the new scripts call for it.
+
 ## Files
 
 | File | Role |
 |---|---|
-| `Audacity annotation hotkey.ahk` | Binds Ctrl+Shift+Alt+K, I and N inside Audacity (AutoHotkey v2) |
+| `Audacity annotation hotkey.ahk` | Binds Ctrl+Shift+Alt+K, I and N inside either Audacity, and Ctrl+Alt+/ anywhere (AutoHotkey v2) |
+| `ExportAnnotations2.ps1` | Export for both versions: pipe on 3.7.9, project file on 4.0 |
+| `MakeSoundNouns2.ps1` | Workbook or caption file in, label tracks out, on both versions |
+| `lib\AudacityProjectFile.ps1` | Reads and writes `.aup3`/`.aup4` directly: SQLite, and the binary XML inside it |
+| `lib\AudacityApps.ps1` | Which Audacity is running and in front, and which project file that means |
 | `ExportAnnotations.ps1` | Live export: reads the running project, prompts, writes .xlsx |
 | `ImportSoundNouns.ps1` | Live import: a caption `.txt` in, one label track per category number |
 | `MakeSoundNouns.ps1` | Workbook in, label tracks out: asks Claude for the nouns, then runs the import |
@@ -344,16 +421,25 @@ change made for one schema cannot break the other.
 
 ## Requirements
 
-Excel (uses COM to write real `.xlsx`, not CSV), AutoHotkey v2, Audacity 3.x
-with `mod-script-pipe`. All present on this machine.
-[Ctrl+Shift+Alt+N](#3b-workbook-in-label-tracks-out--one-press) additionally
-needs the Claude Code CLI on PATH and signed in; the other two routes do not.
+Excel (uses COM to write real `.xlsx`, not CSV), AutoHotkey v2, and Audacity —
+**3.7.9** with `mod-script-pipe`, or **4.0**, or both. All present on this
+machine. [Ctrl+Shift+Alt+N](#3b-workbook-in-label-tracks-out--one-press)
+additionally needs the Claude Code CLI on PATH and signed in; the other two
+routes do not.
 
-Note: Audacity 4 is also installed here, but it has no scripting pipe — the
-hotkey route works with **Audacity 3.7.8** only.
+The 4.0 route needs nothing extra at all: it reads and writes the project file
+through `winsqlite3.dll`, which ships with Windows.
 
 ## Changing the hotkeys
 
-Edit the `^+!k::` (export), `^+!i::` (import) or `^+!n::` (make nouns and import)
-line in `Audacity annotation hotkey.ahk`.
+Edit the `^+!k::` (export), `^+!i::` (import), `^+!n::` (make nouns and import)
+or `^!/::` (open Caption Filler III) line in `Audacity annotation hotkey.ahk`.
 `^` = Ctrl, `+` = Shift, `!` = Alt.
+
+The first three fire only while Audacity is focused — either version, and which
+one you pressed them in is passed to the script as `-Version`. **Ctrl+Alt+/** fires
+anywhere, because the guide it opens belongs beside the browser — pressing it
+again while the guide is up raises that window rather than starting a second
+copy, so the sheet stays bound and the `✓` marks stay put. It is the `/` key of
+the US layout; on the Danish, Norwegian and Swedish layouts also installed here
+`/` is Shift+7, so write `^!SC035::` instead to keep the same physical key.
