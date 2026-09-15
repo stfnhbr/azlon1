@@ -73,3 +73,10 @@ installation is opening the extra instance.
 ```powershell
 powershell -ExecutionPolicy Bypass -File "$HOME\Downloads\Who-StartedExcel.ps1"
 ```
+
+## excel_open.py
+
+Python helper that opens workbooks inside the Excel that is already running instead of
+starting a second one. Replace `os.startfile(path)` or `subprocess` calls with
+`show(path)`, and wrap background work in `work_quietly(path)`, which always quits its
+private Excel when done. Needs `pip install xlwings`.
