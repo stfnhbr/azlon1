@@ -48,3 +48,17 @@ try:
 finally:
     app.quit()
 ```
+
+## Find-PersonalMacros.ps1
+
+Use this when the personal macros seem to have disappeared after a crash or a forced
+close of Excel. Close Excel first, then run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$HOME\Downloads\Find-PersonalMacros.ps1"
+```
+
+It reports where `PERSONAL.XLSB` is, lists every copy on your profile, shows Excel's
+"Disabled Items" list, and checks whether the file still contains VBA code. Nothing is
+changed unless you add `-ReEnable`, which clears the Disabled Items list so Excel loads
+the file again at startup.
