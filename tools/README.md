@@ -62,3 +62,14 @@ It reports where `PERSONAL.XLSB` is, lists every copy on your profile, shows Exc
 "Disabled Items" list, and checks whether the file still contains VBA code. Nothing is
 changed unless you add `-ReEnable`, which clears the Disabled Items list so Excel loads
 the file again at startup.
+
+## Who-StartedExcel.ps1
+
+Run this while the lock prompt is on screen, before clicking it. It lists every Excel
+process with its start time, window title, the program that launched it, and its
+command line. That shows whether a script, Outlook, Explorer, or a second Excel
+installation is opening the extra instance.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$HOME\Downloads\Who-StartedExcel.ps1"
+```
